@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+# Launch Price Target Hunter from the desktop / Omarchy Apps menu.
+#
+# The app is a Vite dev server (the Yahoo proxy lives in the dev/preview
+# server), so this script ensures the server is running, then opens the UI in
+# an Omarchy web-app window (or the default browser).
+#
+# Usage:
+#   price-target-hunter           launch (starting the server if needed)
+#   price-target-hunter --stop    stop the background server
+#   price-target-hunter --restart restart the background server and relaunch
+set -euo pipefail
+
+PORT="${PTH_PORT:-5199}"
+URL="http://localhost:${PORT}/"
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/price-target-hunter"
+LOG="$STATE_DIR/server.log"
+PIDFILE="$STATE_DIR/server.pid"
+
+resolve_app_dir() {
+  if [ -n "${PRICE_TARGET_HUNTER_HOME:-}" ] && [ -d "${PRICE_TARGET_HUNTER_HOME}" ]; then
+    printf '%s\n' "$PRICE_TARGET_HUNTER_HOME"
+    return 0
+  fi
+  local cfg="$HOME/.config/price-target-hunter/home"
+  if [ -f "$cfg" ]; then
+    local d
+    d="$(cat "$cfg")"
+    if [ -d "$d" ]; then
+      printf '%s\n' "$d"
+      return 0
+    fi
+  fi
+  local d
+  for d in "$HOME/Work/price-target-hunter" "$HOME/price-target-hunter" "$HOME/src/price-target-hunter"; do
+    if [ -d "$d" ]; then
+      printf '%s\n' "$d"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Run npm through mise when available so the project's Node version is used.
+run_npm() {
+  if command -v mise >/dev/null 2>&1; then
+    mise exec -C "$APP_DIR" -- npm "$@"
+  else
+    ( cd "$APP_DIR" && npm "$@" )
+  fi
+}
+
+is_up() {
+  curl -fsS -o /dev/null --max-time 2 "$URL" 2>/dev/null
+}
+
+stop_server() {
+  if [ -f "$PIDFILE" ]; then
+    local pid
+    pid="$(cat "$PIDFILE" 2>/dev/null || true)"
+    if [ -n "${pid}" ] && kill -0 "$pid" 2>/dev/null; then
+      kill "$pid" 2>/dev/null || true
+    fi
+    rm -f "$PIDFILE"
+  fi
+  # Also catch the vite process on our port if the pidfile went stale.
+  pkill -f "vite.*--port ${PORT}" 2>/dev/null || true
+}
+
+APP_DIR="$(resolve_app_dir)" || {
+  notify-send "Price Target Hunter" "App directory not found." 2>/dev/null || true
+  exit 1
+}
+mkdir -p "$STATE_DIR"
+
+case "${1:-}" in
+  --stop)
+    stop_server
+    echo "Price Target Hunter server stopped."
+    exit 0
+    ;;
+  --restart)
+    stop_server
+    sleep 0.5
+    ;;
+esac
+
+if ! is_up; then
+  if [ ! -d "$APP_DIR/node_modules" ]; then
+    notify-send "Price Target Hunter" "Installing dependencies (first run)…" 2>/dev/null || true
+    echo "Installing npm dependencies in $APP_DIR …" >>"$LOG"
+    if ! run_npm install >>"$LOG" 2>&1; then
+      notify-send "Price Target Hunter" "npm install failed. See $LOG" 2>/dev/null || true
+      exit 1
+    fi
+  fi
+
+  if command -v mise >/dev/null 2>&1; then
+    setsid nohup mise exec -C "$APP_DIR" -- npm run dev -- --port "$PORT" --strictPort >>"$LOG" 2>&1 &
+  else
+    ( cd "$APP_DIR" && setsid nohup npm run dev -- --port "$PORT" --strictPort >>"$LOG" 2>&1 & )
+  fi
+  echo $! >"$PIDFILE"
+
+  for _ in $(seq 1 120); do
+    is_up && break
+    sleep 0.25
+  done
+fi
+
+if ! is_up; then
+  notify-send "Price Target Hunter" "Failed to start. See $LOG" 2>/dev/null || true
+  exit 1
+fi
+
+if command -v omarchy-launch-webapp >/dev/null 2>&1; then
+  exec omarchy-launch-webapp "$URL"
+elif command -v xdg-open >/dev/null 2>&1; then
+  exec xdg-open "$URL"
+else
+  printf '%s\n' "$URL"
+fi

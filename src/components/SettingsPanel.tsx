@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useApp } from "../store/AppStore";
 import { DEFAULT_SETTINGS } from "../lib/defaults";
-import { defaultSymbols } from "../data/universe";
+import { UNIVERSE_PRESETS } from "../data/presets";
 import { Button, Card, CardHeader, Field, Input, Select, Switch } from "./ui";
 import { ensureNotificationPermission } from "../hooks/useScreener";
 
@@ -22,8 +22,15 @@ export function SettingsPanel() {
           .filter(Boolean),
       ),
     );
-    if (symbols.length) updateSettings({ universe: symbols });
+    if (symbols.length) updateSettings({ universe: symbols, universePreset: "custom" });
   };
+
+  const applyPreset = (id: string, symbols: string[]) => {
+    setUniverseText(symbols.join(", "));
+    updateSettings({ universe: symbols, universePreset: id });
+  };
+
+  const estMinutes = Math.max(1, Math.round(settings.universe.length / 300));
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
@@ -131,8 +138,29 @@ export function SettingsPanel() {
       </Card>
 
       <Card>
-        <CardHeader title="Universe" subtitle={`${settings.universe.length} symbols screened`} />
+        <CardHeader
+          title="Universe"
+          subtitle={`${settings.universe.length} symbols screened · full scan ≈ ${estMinutes} min`}
+        />
         <div className="flex flex-col gap-3 p-4">
+          <div className="flex flex-wrap gap-2">
+            {UNIVERSE_PRESETS.map((p) => (
+              <Button
+                key={p.id}
+                size="sm"
+                variant={settings.universePreset === p.id ? "primary" : "secondary"}
+                title={p.description}
+                onClick={() => applyPreset(p.id, p.symbols)}
+              >
+                {p.label}
+              </Button>
+            ))}
+            {settings.universePreset === "custom" ? (
+              <Button size="sm" variant="primary" disabled>
+                Custom
+              </Button>
+            ) : null}
+          </div>
           <textarea
             className="min-h-32 w-full rounded-md border border-border bg-bg p-2.5 text-xs text-fg focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
             value={universeText}
@@ -143,8 +171,8 @@ export function SettingsPanel() {
             <Button variant="primary" size="sm" onClick={saveUniverse}>
               Save universe
             </Button>
-            <Button size="sm" onClick={() => setUniverseText(defaultSymbols().join(", "))}>
-              Load default list
+            <Button size="sm" onClick={() => applyPreset("sp500", UNIVERSE_PRESETS[1].symbols)}>
+              Load S&P 500
             </Button>
             <Button
               variant="danger"
@@ -158,7 +186,8 @@ export function SettingsPanel() {
             </Button>
           </div>
           <p className="text-[11px] text-muted">
-            Symbols are comma/space separated. Default: {DEFAULT_SETTINGS.universe.length} large-cap US names.
+            Symbols are comma/space separated. Large universes take longer; results stream in as they
+            load, and you can stop a scan from the header. Default: {DEFAULT_SETTINGS.universe.length} names.
           </p>
         </div>
       </Card>

@@ -2,23 +2,37 @@ import type { Plugin, Connect } from "vite";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 /**
- * Dev/preview-only Yahoo Finance proxy.
+ * Dev/preview Yahoo Finance proxy backed by the "yahoo-finance2" library.
  *
- * Yahoo's quoteSummary endpoint requires a session cookie + "crumb" token and
- * does not send CORS headers, so a browser cannot call it directly. This
- * middleware does the cookie/crumb handshake on the server and exposes a clean
- * same-origin endpoint at:
+ * The browser cannot call Yahoo directly (no CORS headers, cookie + crumb
+ * handshake required). yahoo-finance2 handles cookies, crumbs, validation,
+ * retries and request queueing, so this middleware just exposes clean,
+ * same-origin endpoints:
  *
- *   /api/yahoo/quoteSummary?symbol=AAPL
+ *   /api/yahoo/quoteSummary?symbol=AAPL&modules=price,financialData,...
  *   /api/yahoo/chart?symbol=AAPL&range=1y&interval=1d
  *   /api/yahoo/search?q=apple
+ *   /api/yahoo/quote?symbols=AAPL,MSFT
  *
- * It is best-effort: if Yahoo changes its anti-bot behavior the app falls back
- * to the official FMP / Finnhub providers (configure keys in Settings).
+ * https://github.com/gadicc/node-yahoo-finance2
  */
 
-const UA =
-  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36";
+/* eslint-disable @typescript-eslint/no-explicit-any */
+let clientPromise: Promise<any> | null = null;
+
+function getClient(): Promise<any> {
+  if (!clientPromise) {
+    clientPromise = (async () => {
+      const mod = await import("yahoo-finance2");
+      const YahooFinance = mod.default;
+      return new YahooFinance({
+        suppressNotices: ["yahooSurvey", "ripHistorical"],
+        versionCheck: false,
+      });
+    })();
+  }
+  return clientPromise;
+}
 
 const DEFAULT_MODULES = [
   "price",
@@ -31,62 +45,26 @@ const DEFAULT_MODULES = [
   "earnings",
 ].join(",");
 
-interface Auth {
-  cookie: string;
-  crumb: string;
-  fetchedAt: number;
-}
+const RANGE_DAYS: Record<string, number> = {
+  "1d": 1,
+  "5d": 5,
+  "1mo": 30,
+  "3mo": 90,
+  "6mo": 180,
+  "1y": 365,
+  "2y": 730,
+  "5y": 1825,
+  "10y": 3650,
+};
 
-let auth: Auth | null = null;
-let authPromise: Promise<Auth> | null = null;
+const INTERVALS = new Set(["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h", "1d", "5d", "1wk", "1mo", "3mo"]);
 
-function readSetCookies(res: Response): string {
-  const anyHeaders = res.headers as Headers & { getSetCookie?: () => string[] };
-  const list = typeof anyHeaders.getSetCookie === "function" ? anyHeaders.getSetCookie() : [];
-  const raw = list.length ? list : (res.headers.get("set-cookie") ? [res.headers.get("set-cookie") as string] : []);
-  return raw
-    .map((c) => c.split(";")[0])
-    .filter(Boolean)
-    .join("; ");
-}
-
-async function handshake(): Promise<Auth> {
-  const consent = await fetch("https://fc.yahoo.com/", {
-    headers: { "User-Agent": UA, Accept: "*/*" },
-    redirect: "manual",
-  }).catch(() => null);
-  const cookie = consent ? readSetCookies(consent) : "";
-
-  const crumbRes = await fetch("https://query1.finance.yahoo.com/v1/test/getcrumb", {
-    headers: { "User-Agent": UA, Cookie: cookie, Accept: "*/*" },
-  });
-  const crumb = (await crumbRes.text()).trim();
-  if (!/^[A-Za-z0-9._~-]{4,}$/.test(crumb)) throw new Error("Yahoo crumb handshake failed (rate limited?)");
-
-  return { cookie, crumb, fetchedAt: Date.now() };
-}
-
-async function getAuth(force = false): Promise<Auth> {
-  if (!force && auth && Date.now() - auth.fetchedAt < 30 * 60 * 1000) return auth;
-  if (!force && authPromise) return authPromise;
-  authPromise = handshake()
-    .then((a) => {
-      auth = a;
-      return a;
-    })
-    .finally(() => {
-      authPromise = null;
-    });
-  return authPromise;
-}
-
-async function yahooFetch(path: string, force = false): Promise<{ status: number; body: string }> {
-  const a = await getAuth(force);
-  const sep = path.includes("?") ? "&" : "?";
-  const res = await fetch(`https://query1.finance.yahoo.com${path}${sep}crumb=${encodeURIComponent(a.crumb)}`, {
-    headers: { "User-Agent": UA, Cookie: a.cookie, Accept: "application/json" },
-  });
-  return { status: res.status, body: await res.text() };
+function rangeToPeriod1(range: string): Date {
+  const now = new Date();
+  if (range === "ytd") return new Date(Date.UTC(now.getUTCFullYear(), 0, 1));
+  if (range === "max") return new Date("1970-01-01T00:00:00Z");
+  const days = RANGE_DAYS[range] ?? 365;
+  return new Date(now.getTime() - days * 864e5);
 }
 
 function sendJson(res: ServerResponse, status: number, body: string) {
@@ -96,7 +74,7 @@ function sendJson(res: ServerResponse, status: number, body: string) {
   res.end(body);
 }
 
-function requireSymbol(req: IncomingMessage, res: ServerResponse): string | null {
+function readSymbol(req: IncomingMessage, res: ServerResponse): string | null {
   const url = new URL(req.url ?? "", "http://localhost");
   const symbol = (url.searchParams.get("symbol") ?? "").trim().toUpperCase();
   if (!/^[A-Z0-9.\-^=]{1,15}$/.test(symbol)) {
@@ -109,38 +87,59 @@ function requireSymbol(req: IncomingMessage, res: ServerResponse): string | null
 async function handle(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url ?? "", "http://localhost");
   try {
+    const yf = await getClient();
+
     if (url.pathname === "/api/yahoo/quoteSummary") {
-      const symbol = requireSymbol(req, res);
+      const symbol = readSymbol(req, res);
       if (!symbol) return;
-      const modules = (url.searchParams.get("modules") ?? DEFAULT_MODULES).replace(/[^a-zA-Z,]/g, "");
-      let out = await yahooFetch(`/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=${modules}&formatted=false`);
-      if (out.status === 401 || out.status === 403) out = await yahooFetch(`/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=${modules}&formatted=false`, true);
-      sendJson(res, out.status, out.body);
+      const modules = (url.searchParams.get("modules") ?? DEFAULT_MODULES)
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const result = await yf.quoteSummary(symbol, { modules, formatted: false }, { validateResult: false });
+      sendJson(res, 200, JSON.stringify(result));
       return;
     }
 
     if (url.pathname === "/api/yahoo/chart") {
-      const symbol = requireSymbol(req, res);
+      const symbol = readSymbol(req, res);
       if (!symbol) return;
       const range = (url.searchParams.get("range") ?? "1y").replace(/[^0-9a-z]/gi, "");
-      const interval = (url.searchParams.get("interval") ?? "1d").replace(/[^0-9a-z]/gi, "");
-      let out = await yahooFetch(`/v8/finance/chart/${encodeURIComponent(symbol)}?range=${range}&interval=${interval}`);
-      if (out.status === 401 || out.status === 403) out = await yahooFetch(`/v8/finance/chart/${encodeURIComponent(symbol)}?range=${range}&interval=${interval}`, true);
-      sendJson(res, out.status, out.body);
+      const requested = (url.searchParams.get("interval") ?? "1d").replace(/[^0-9a-z]/gi, "");
+      const interval = INTERVALS.has(requested) ? requested : "1d";
+      const result = await yf.chart(symbol, { period1: rangeToPeriod1(range), interval }, { validateResult: false });
+      sendJson(res, 200, JSON.stringify(result));
       return;
     }
 
     if (url.pathname === "/api/yahoo/search") {
       const q = (url.searchParams.get("q") ?? "").replace(/[^a-zA-Z0-9 .\-]/g, "").slice(0, 40);
-      const out = await yahooFetch(`/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=10&newsCount=5`);
-      sendJson(res, out.status, out.body);
+      const result = await yf.search(q, { quotesCount: 10, newsCount: 8 }, { validateResult: false });
+      sendJson(res, 200, JSON.stringify(result));
+      return;
+    }
+
+    if (url.pathname === "/api/yahoo/quote") {
+      const symbols = (url.searchParams.get("symbols") ?? "")
+        .split(",")
+        .map((s) => s.trim().toUpperCase())
+        .filter((s) => /^[A-Z0-9.\-^=]{1,15}$/.test(s))
+        .slice(0, 50);
+      if (!symbols.length) {
+        sendJson(res, 400, JSON.stringify({ error: "invalid symbols" }));
+        return;
+      }
+      const result = await yf.quote(symbols, { return: "array" }, { validateResult: false });
+      sendJson(res, 200, JSON.stringify(result));
       return;
     }
 
     res.statusCode = 404;
     res.end("not found");
   } catch (err) {
-    sendJson(res, 502, JSON.stringify({ error: String((err as Error).message ?? err) }));
+    const message = (err as Error)?.message ?? String(err);
+    console.warn(`[yahoo-proxy] ${url.pathname}: ${message}`);
+    sendJson(res, 502, JSON.stringify({ error: message }));
   }
 }
 

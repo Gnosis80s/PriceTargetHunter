@@ -12,6 +12,14 @@ function num(v: unknown): number | undefined {
   return undefined;
 }
 
+/** Accepts Date objects, ISO strings or epoch seconds/milliseconds. */
+function epochMs(v: unknown): number {
+  if (v == null) return 0;
+  if (typeof v === "number") return v > 1e12 ? v : v * 1000;
+  const parsed = Date.parse(String(v));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function pick(obj: any, path: string): any {
   return path.split(".").reduce((acc, k) => (acc == null ? acc : acc[k]), obj);
 }
@@ -32,13 +40,14 @@ function mapGradeHistory(history: any[] | undefined): TargetChange[] {
   if (!Array.isArray(history)) return [];
   return history
     .map((h) => ({
-      date: (num(h?.epochGradeDate) ?? 0) * 1000,
+      date: epochMs(h?.epochGradeDate),
       firm: String(h?.firm ?? "Unknown"),
       action: String(h?.action ?? "main"),
       from: h?.fromGrade != null ? String(h.fromGrade) : undefined,
       to: h?.toGrade != null ? String(h.toGrade) : undefined,
     }))
     .filter((c) => c.date > 0)
+    .sort((a, b) => b.date - a.date)
     .slice(0, 60);
 }
 
@@ -48,8 +57,10 @@ export async function fetchYahoo(symbol: string): Promise<StockData> {
   });
   if (!res.ok) throw new Error(`yahoo ${res.status}`);
   const json = await res.json();
-  const r = json?.quoteSummary?.result?.[0];
-  if (!r) throw new Error(json?.quoteSummary?.error?.description ?? "yahoo: no result");
+  // yahoo-finance2 returns the module object directly; tolerate the legacy
+  // { quoteSummary: { result: [...] } } envelope too.
+  const r = json?.quoteSummary?.result?.[0] ?? json;
+  if (!r || typeof r !== "object") throw new Error("yahoo: no result");
 
   const price = pick(r, "price");
   const fin = pick(r, "financialData");
@@ -59,13 +70,13 @@ export async function fetchYahoo(symbol: string): Promise<StockData> {
   const trend = pick(r, "recommendationTrend.trend")?.[0];
 
   const current = num(fin?.currentPrice) ?? num(price?.regularMarketPrice) ?? num(detail?.regularMarketPrice);
-  const changePct =
-    num(price?.regularMarketChangePercent) != null
-      ? num(price?.regularMarketChangePercent)! * 100
-      : undefined;
+  const previousClose = num(price?.regularMarketPreviousClose) ?? num(detail?.previousClose);
+  let changePct: number | undefined;
+  if (current != null && previousClose) changePct = ((current - previousClose) / previousClose) * 100;
+  else if (num(price?.regularMarketChangePercent) != null) changePct = num(price?.regularMarketChangePercent)! * 100;
 
   let recMean = num(fin?.recommendationMean);
-  let recKey = fin?.recommendationKey ? String(fin.recommendationKey) : undefined;
+  const recKey = fin?.recommendationKey ? String(fin.recommendationKey) : undefined;
   if (recMean == null && trend) {
     const sb = num(trend.strongBuy) ?? 0;
     const b = num(trend.buy) ?? 0;
@@ -76,19 +87,16 @@ export async function fetchYahoo(symbol: string): Promise<StockData> {
     if (total > 0) recMean = (sb * 1 + b * 2 + h * 3 + s * 4 + ss * 5) / total;
   }
 
-  const volume = num(price?.regularMarketVolume) ?? num(detail?.volume);
-  const avgVolume = num(detail?.averageVolume) ?? num(stats?.averageVolume);
-
   return {
     symbol,
     name: price?.longName ?? price?.shortName ?? undefined,
     currency: price?.currency ?? undefined,
     price: current,
-    previousClose: num(price?.regularMarketPreviousClose) ?? num(detail?.previousClose),
+    previousClose,
     changePct,
     marketCap: num(price?.marketCap) ?? num(detail?.marketCap),
-    volume,
-    avgVolume,
+    volume: num(price?.regularMarketVolume) ?? num(detail?.volume),
+    avgVolume: num(detail?.averageVolume) ?? num(stats?.averageVolume),
     sector: profile?.sector ?? undefined,
     industry: profile?.industry ?? undefined,
     targetMean: num(fin?.targetMeanPrice),
@@ -120,6 +128,18 @@ export async function fetchYahooChart(symbol: string, range = "1y", interval = "
   );
   if (!res.ok) throw new Error(`yahoo chart ${res.status}`);
   const json = await res.json();
+
+  // yahoo-finance2 chart() returns { meta, quotes: [{ date, close, ... }] }.
+  if (Array.isArray(json?.quotes)) {
+    return json.quotes
+      .map((q: any) => ({
+        t: epochMs(q?.date),
+        close: typeof q?.close === "number" ? q.close : NaN,
+      }))
+      .filter((p: YahooChartPoint) => p.t > 0 && Number.isFinite(p.close));
+  }
+
+  // Legacy raw Yahoo shape.
   const result = json?.chart?.result?.[0];
   const ts: number[] = result?.timestamp ?? [];
   const closes: (number | null)[] = result?.indicators?.quote?.[0]?.close ?? [];
@@ -134,10 +154,10 @@ export async function fetchYahooNews(symbol: string): Promise<NewsItem[]> {
     if (!res.ok) return [];
     const json = await res.json();
     return (json?.news ?? []).map((n: any) => ({
-      title: String(n.title ?? ""),
-      publisher: String(n.publisher ?? ""),
-      link: String(n.link ?? ""),
-      publishedAt: (num(n.providerPublishTime) ?? 0) * 1000,
+      title: String(n?.title ?? ""),
+      publisher: String(n?.publisher ?? ""),
+      link: String(n?.link ?? ""),
+      publishedAt: epochMs(n?.providerPublishTime),
     }));
   } catch {
     return [];

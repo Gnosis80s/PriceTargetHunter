@@ -1,6 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, type ReactNode } from "react";
 import type { AppSettings, Filters, StockData, TargetSnapshot, WatchlistItem } from "../lib/types";
 import { DEFAULT_SETTINGS } from "../lib/defaults";
+import { DEFAULT_UNIVERSE } from "../data/universe";
+import { defaultPresetSymbols } from "../data/presets";
 import { usePersistentState } from "../hooks/usePersistentState";
 
 interface AppContextValue {
@@ -25,15 +27,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [watchlist, setWatchlist] = usePersistentState<WatchlistItem[]>("watchlist", []);
   const [snapshots, setSnapshots] = usePersistentState<Record<string, TargetSnapshot[]>>("snapshots", {});
 
-  const settings = useMemo<AppSettings>(
-    () => ({
+  const settings = useMemo<AppSettings>(() => {
+    const merged: AppSettings = {
       ...DEFAULT_SETTINGS,
       ...rawSettings,
       filters: { ...DEFAULT_SETTINGS.filters, ...(rawSettings?.filters ?? {}) },
       universe: rawSettings?.universe?.length ? rawSettings.universe : DEFAULT_SETTINGS.universe,
-    }),
-    [rawSettings],
-  );
+      universePreset: rawSettings?.universePreset ?? DEFAULT_SETTINGS.universePreset,
+    };
+
+    // Migrate installs that predate universe presets and were on the old
+    // 70-name curated list: upgrade them to the S&P 500 preset.
+    if (!rawSettings?.universePreset) {
+      const curated = DEFAULT_UNIVERSE.map((u) => u.symbol);
+      const current = merged.universe ?? [];
+      const looksCurated = current.length === curated.length && curated.every((s) => current.includes(s));
+      if (looksCurated) {
+        merged.universe = defaultPresetSymbols();
+        merged.universePreset = "sp500";
+      } else {
+        merged.universePreset = "custom";
+      }
+    }
+
+    return merged;
+  }, [rawSettings]);
 
   useEffect(() => {
     const root = document.documentElement;

@@ -8,7 +8,7 @@ import { fetchFinnhub } from "./finnhub";
 
 const CACHE_TTL = 15 * 60 * 1000;
 
-const yahooLimiter = new RateLimiter(180);
+const yahooLimiter = new RateLimiter(300);
 const fmpLimiter = new RateLimiter(300);
 const finnhubLimiter = new RateLimiter(55);
 
@@ -116,20 +116,33 @@ export interface ScanResult {
   errors: { symbol: string; message: string }[];
 }
 
+export interface ScanOptions {
+  bypassCache?: boolean;
+  /** Called as each symbol resolves, for progressive results. */
+  onRow?: (stock: StockData) => void;
+  signal?: AbortSignal;
+}
+
 export async function scanUniverse(
   symbols: string[],
   settings: AppSettings,
   onProgress?: (done: number, total: number) => void,
-  opts: { bypassCache?: boolean } = {},
+  opts: ScanOptions = {},
 ): Promise<ScanResult> {
   let done = 0;
   const rows: StockData[] = [];
   const errors: { symbol: string; message: string }[] = [];
 
   await mapLimit(symbols, Math.max(1, settings.concurrency), async (symbol) => {
+    if (opts.signal?.aborted) {
+      done += 1;
+      onProgress?.(done, symbols.length);
+      return;
+    }
     try {
       const { data } = await fetchStock(symbol, settings, { bypassCache: opts.bypassCache });
       rows.push(data);
+      opts.onRow?.(data);
     } catch (e) {
       errors.push({ symbol, message: (e as Error).message });
     }

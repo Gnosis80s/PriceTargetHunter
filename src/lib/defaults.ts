@@ -1,5 +1,5 @@
 import type { AppSettings, Filters } from "./types";
-import { defaultSymbols } from "../data/universe";
+import { defaultPresetSymbols } from "../data/presets";
 
 export const DEFAULT_FILTERS: Filters = {
   minUpside: 10,
@@ -28,6 +28,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   notifications: false,
   alertMinNewUpside: 30,
   webhookUrl: "",
-  universe: defaultSymbols(),
+  universe: defaultPresetSymbols(),
+  universePreset: "sp500",
   filters: DEFAULT_FILTERS,
 };

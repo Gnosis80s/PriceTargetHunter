@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Price Target Hunter
+GenericName=Analyst price target screener
+Comment=Scan the market for stocks with the highest analyst upside
+Comment[en_GB]=Scan the market for stocks with the highest analyst upside
+Exec=price-target-hunter
+Icon=price-target-hunter
+Terminal=false
+Categories=Office;Finance;
+Keywords=stocks;shares;analyst;price;target;upside;screener;finance;investing;
+StartupNotify=true

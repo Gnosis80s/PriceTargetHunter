@@ -23,6 +23,8 @@ falls back to a bundled offline dataset so the UI is never empty.
 
 - **Screener** — sortable table with upside %, risk/reward, analyst coverage,
   consensus, 90-day target momentum, composite score and market cap.
+- **Universe presets** — Curated (~70) or **S&P 500 (~503)**, plus paste your own
+  list. Results **stream in as they load**, with a stop button for long scans.
 - **Filters** — min upside, min/max analysts, market-cap and price ranges,
   sector, minimum consensus rating, minimum risk/reward, recent-upgrades-only.
 - **Dashboard** — top opportunities, sector heat map of average upside, trending
@@ -45,15 +47,18 @@ npm install
 npm run dev        # http://localhost:5173
 ```
 
-The dev server includes a small Yahoo Finance proxy (`vite-plugin-yahoo.ts`) so
-you do **not** need an API key to get started. Yahoo requires a session cookie +
-"crumb" token and sends no CORS headers, so the proxy performs that handshake on
-the server and exposes:
+The dev server includes a Yahoo Finance proxy (`vite-plugin-yahoo.ts`) so you do
+**not** need an API key to get started. Yahoo sends no CORS headers and needs a
+session cookie + "crumb" token, so the proxy does the work server-side using the
+[`yahoo-finance2`](https://github.com/gadicc/node-yahoo-finance2) library
+(cookies, crumb, validation, retries and request queueing handled for you) and
+exposes:
 
 ```
-/api/yahoo/quoteSummary?symbol=AAPL
+/api/yahoo/quoteSummary?symbol=AAPL&modules=price,financialData,...
 /api/yahoo/chart?symbol=AAPL&range=1y&interval=1d
 /api/yahoo/search?q=AAPL
+/api/yahoo/quote?symbols=AAPL,MSFT,NVDA
 ```
 
 If Yahoo is rate-limiting your IP (or you are offline), the app automatically
@@ -68,11 +73,43 @@ npm run preview    # serve the production build (proxy still active)
 
 ---
 
+## Desktop launcher (Omarchy)
+
+Launch it from the **Omarchy Apps menu** like any other app:
+
+```bash
+./install.sh
+```
+
+This installs:
+
+| Path | Purpose |
+| --- | --- |
+| `~/.local/bin/price-target-hunter` | launcher script |
+| `~/.local/share/applications/price-target-hunter.desktop` | Apps menu entry |
+| `~/.local/share/icons/hicolor/scalable/apps/price-target-hunter.svg` | themed icon |
+| `~/.config/price-target-hunter/home` | remembers this checkout's location |
+
+The launcher starts the Vite dev server in the background (port `5199`, logging
+to `~/.local/state/price-target-hunter/server.log`) and opens the UI via
+`omarchy-launch-webapp`. The server stays up for fast relaunches:
+
+```bash
+price-target-hunter            # launch
+price-target-hunter --stop     # stop the background server
+price-target-hunter --restart  # restart then relaunch
+PTH_PORT=6000 price-target-hunter   # use a different port
+```
+
+If the checkout moves, re-run `./install.sh` (or set `PRICE_TARGET_HUNTER_HOME`).
+
+---
+
 ## Data sources
 
 | Source | Key? | Endpoints used | Free-tier notes |
 | --- | --- | --- | --- |
-| **Yahoo Finance** | No | `quoteSummary` (price, targets, ratings, upgrades), `chart`, `search` | Unofficial, cookie+crumb. Rate-limit friendly usage only. |
+| **Yahoo Finance** | No | `quoteSummary` (price, targets, ratings, upgrades), `chart`, `search`, `quote` — via [`yahoo-finance2`](https://github.com/gadicc/node-yahoo-finance2) | Unofficial. Cookie/crumb, retries and queueing handled by the library. Rate-limit friendly usage only. |
 | **Financial Modeling Prep** | Yes | `quote`, `profile`, `price-target-consensus`, `grades-consensus`, `price-target` | ~250 calls/day on free tier. Tries `/stable` then legacy `/api/v3`. |
 | **Finnhub** | Yes | `quote`, `stock/price-target`, `stock/recommendation`, `stock/profile2`, `stock/upgrade-downgrade`, `stock/metric` | 60 calls/min. |
 
@@ -82,11 +119,13 @@ your browser's `localStorage`).
 
 ### Rate limiting & caching
 
-- A token-bucket limiter per provider (`src/lib/concurrency.ts`) plus a bounded
-  worker pool (`mapLimit`, default 5 concurrent requests).
+- A token-bucket limiter per provider (`src/lib/concurrency.ts`, ~300/min for
+  Yahoo) plus a bounded worker pool (`mapLimit`, default 5 concurrent requests).
 - Every symbol response is cached for **15 minutes** in `localStorage`
   (`src/lib/cache.ts`). The **Scan** button bypasses the cache; the initial load
   and auto-refresh respect it.
+- Roughly: S&P 500 (~503 names) takes ~1.5–2.5 min from cold, seconds when
+  cached. Results appear as they load; use the stop button to halt a scan.
 - Reduce **Settings → Concurrent requests** if you hit limits.
 
 ---
@@ -118,7 +157,7 @@ Composite **score (0–100)**:
 price-target-hunter/
 ├─ index.html
 ├─ vite.config.ts              # Vite + Tailwind + Yahoo proxy plugin
-├─ vite-plugin-yahoo.ts        # dev/preview Yahoo cookie+crumb proxy
+├─ vite-plugin-yahoo.ts        # dev/preview Yahoo proxy (yahoo-finance2)
 └─ src/
    ├─ main.tsx                 # React entry
    ├─ App.tsx                  # Shell, tabs, scan controls, export
@@ -149,10 +188,12 @@ price-target-hunter/
    │  ├─ csv.ts                # CSV export
    │  ├─ defaults.ts           # default settings & filters
    │  └─ utils.ts              # formatting helpers
-   ├─ data/
-   │  ├─ universe.ts           # default ~70-symbol US universe
-   │  └─ demo.ts               # offline sample dataset
-   └─ store/AppStore.tsx       # settings / watchlist / snapshots context
+    ├─ data/
+    │  ├─ universe.ts           # curated ~70-symbol list + UniverseEntry type
+    │  ├─ sp500.ts              # bundled S&P 500 constituents (~503)
+    │  ├─ presets.ts            # universe presets (Curated / S&P 500)
+    │  └─ demo.ts               # offline sample dataset
+    └─ store/AppStore.tsx       # settings / watchlist / snapshots context
 ```
 
 Data model highlights (`src/lib/types.ts`): `StockData` is the canonical,
@@ -209,9 +250,11 @@ Slack, Discord and Telegram-via-bot-API endpoints accept this JSON shape.
 The Yahoo proxy runs in Vite's dev and preview servers. For a static deploy you
 have two options:
 
-1. **Backend mode** — run a tiny server (Express/FastAPI) that implements the
-   three `/api/yahoo/*` routes (see `vite-plugin-yahoo.ts`) and reverse-proxy it
-   from your host. This keeps keyless Yahoo data working.
+1. **Backend mode** — run a tiny Node server (Express/Hono/Fastify) that mounts
+   the same routes (see `vite-plugin-yahoo.ts`, which is portable — it just needs
+   `yahoo-finance2`) and reverse-proxy it from your host. `yahoo-finance2` is
+   server-side only and cannot ship to the browser, so this keeps keyless Yahoo
+   data working.
 2. **Key-only mode** — configure FMP and/or Finnhub keys; the app works fully
    client-side against their CORS-enabled APIs.
 
@@ -219,8 +262,8 @@ have two options:
 
 ## Roadmap
 
-- Live universe discovery (Yahoo predefined screeners, FMP `stock-screener`)
-  instead of the seeded list.
+- Live universe discovery (Yahoo predefined screeners, FMP `stock-screener`) and
+  auto-refresh of index membership instead of bundled constituent lists.
 - Sector/industry enrichment for every row in a single batch call.
 - Backtesting: historical accuracy of each analyst's targets.
 - Local SQLite/IndexedDB snapshot history for longer target timelines.

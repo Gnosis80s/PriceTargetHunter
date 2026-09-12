@@ -85,6 +85,8 @@ export interface AppSettings {
   alertMinNewUpside: number;
   webhookUrl: string;
   universe: string[];
+  /** id of the selected preset (see data/presets.ts); "custom" when hand-edited. */
+  universePreset: string;
   filters: Filters;
 }
 

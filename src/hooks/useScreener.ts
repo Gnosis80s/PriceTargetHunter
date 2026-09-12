@@ -34,6 +34,7 @@ export function useScreener() {
   const [errors, setErrors] = useState<{ symbol: string; message: string }[]>([]);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const scanningRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
   const prevUpsideRef = useRef<Map<string, number> | null>(null);
   const didInit = useRef(false);
 
@@ -82,15 +83,21 @@ export function useScreener() {
     async (bypassCache = false) => {
       if (scanningRef.current) return;
       scanningRef.current = true;
+      abortRef.current = new AbortController();
       setScanning(true);
       setErrors([]);
+      setAllRows([]);
       setProgress({ done: 0, total: settings.universe.length });
       try {
         const res = await scanUniverse(
           settings.universe,
           settings,
           (done, total) => setProgress({ done, total }),
-          { bypassCache },
+          {
+            bypassCache,
+            signal: abortRef.current.signal,
+            onRow: (stock) => setAllRows((prev) => [...prev, toRow(stock)]),
+          },
         );
         const mapped = res.rows.map(toRow);
         setAllRows(mapped);
@@ -101,10 +108,15 @@ export function useScreener() {
       } finally {
         setScanning(false);
         scanningRef.current = false;
+        abortRef.current = null;
       }
     },
     [settings, recordSnapshots, detectAlerts],
   );
+
+  const stopScan = useCallback(() => {
+    abortRef.current?.abort();
+  }, []);
 
   useEffect(() => {
     if (didInit.current) return;
@@ -120,5 +132,5 @@ export function useScreener() {
     return () => clearInterval(id);
   }, [settings.autoRefresh, settings.refreshMinutes, scan]);
 
-  return { rows, allRows, scanning, progress, errors, lastUpdated, scan };
+  return { rows, allRows, scanning, progress, errors, lastUpdated, scan, stopScan };
 }

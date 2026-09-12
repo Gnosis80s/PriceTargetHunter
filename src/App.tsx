@@ -7,6 +7,7 @@ import {
   Moon,
   RefreshCw,
   Settings as SettingsIcon,
+  Square,
   Star,
   Sun,
 } from "lucide-react";
@@ -35,7 +36,7 @@ const TABS: { id: Tab; label: string; icon: typeof Crosshair }[] = [
 
 export default function App() {
   const { settings, updateSettings, updateFilters } = useApp();
-  const { rows, allRows, scanning, progress, errors, lastUpdated, scan } = useScreener();
+  const { rows, allRows, scanning, progress, errors, lastUpdated, scan, stopScan } = useScreener();
   const [tab, setTab] = useState<Tab>("dashboard");
   const [selected, setSelected] = useState<string | null>(null);
 
@@ -81,6 +82,11 @@ export default function App() {
               <RefreshCw size={14} className={scanning ? "animate-spin" : ""} />
               {scanning ? `${progress.done}/${progress.total}` : "Scan"}
             </Button>
+            {scanning ? (
+              <Button variant="danger" size="sm" onClick={stopScan} title="Stop scan">
+                <Square size={13} />
+              </Button>
+            ) : null}
             <Button
               variant="ghost"
               size="icon"
