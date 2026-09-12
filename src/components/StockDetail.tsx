@@ -1,0 +1,261 @@
+import { useEffect, useMemo, useState } from "react";
+import { ExternalLink, Star, X } from "lucide-react";
+import type { NewsItem, YahooChartPoint } from "../providers/yahoo";
+import { fetchYahooChart, fetchYahooNews } from "../providers/yahoo";
+import { fetchStock } from "../providers";
+import type { StockData } from "../lib/types";
+import { toRow } from "../lib/scoring";
+import { useApp } from "../store/AppStore";
+import { Badge, Button, Dialog } from "./ui";
+import { MultiLineChart, type Series } from "./LineChart";
+import { fmtCompact, fmtMoney, fmtNum, fmtPct, recLabel, timeAgo } from "../lib/utils";
+
+function Stat({ label, value, tone }: { label: string; value: string; tone?: "good" | "bad" }) {
+  return (
+    <div className="rounded-lg border border-border bg-surface-2 px-3 py-2">
+      <div className="text-[11px] text-muted">{label}</div>
+      <div className={`mt-0.5 text-sm font-semibold tabular ${tone === "good" ? "text-good" : tone === "bad" ? "text-bad" : ""}`}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+export function StockDetail({ symbol, onClose }: { symbol: string | null; onClose: () => void }) {
+  const { settings, snapshots, isWatched, addWatch, removeWatch } = useApp();
+  const [stock, setStock] = useState<StockData | null>(null);
+  const [chart, setChart] = useState<YahooChartPoint[]>([]);
+  const [news, setNews] = useState<NewsItem[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!symbol) return;
+    let active = true;
+    setLoading(true);
+    setStock(null);
+    setChart([]);
+    setNews([]);
+    void (async () => {
+      const { data } = await fetchStock(symbol, settings).catch(() => ({ data: null as unknown as StockData }));
+      if (active && data) setStock(data);
+      if (settings.yahooEnabled) {
+        const [c, n] = await Promise.all([
+          fetchYahooChart(symbol, "1y", "1d").catch(() => []),
+          fetchYahooNews(symbol).catch(() => []),
+        ]);
+        if (active) {
+          setChart(c);
+          setNews(n);
+        }
+      }
+      if (active) setLoading(false);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [symbol, settings]);
+
+  const row = useMemo(() => (stock ? toRow(stock) : null), [stock]);
+
+  const series = useMemo<Series[]>(() => {
+    const out: Series[] = [];
+    if (chart.length) {
+      out.push({ name: "Price", color: "var(--accent)", points: chart.map((p) => ({ t: p.t, v: p.close })) });
+      if (stock?.targetMean) {
+        out.push({
+          name: "Target",
+          color: "var(--good)",
+          points: chart.map((p) => ({ t: p.t, v: stock.targetMean as number })),
+        });
+      }
+    }
+    const snaps = snapshots[symbol ?? ""] ?? [];
+    if (snaps.length >= 2) {
+      out.push({
+        name: "Avg target (history)",
+        color: "var(--warn)",
+        points: snaps.filter((s) => s.targetMean != null).map((s) => ({ t: s.date, v: s.targetMean as number })),
+      });
+    }
+    return out;
+  }, [chart, stock, snapshots, symbol]);
+
+  const ratings = useMemo(() => {
+    if (!stock) return [];
+    const data = [
+      { label: "Strong Buy", value: stock.strongBuy ?? 0, tone: "good" as const },
+      { label: "Buy", value: stock.buy ?? 0, tone: "good" as const },
+      { label: "Hold", value: stock.hold ?? 0, tone: "warn" as const },
+      { label: "Sell", value: stock.sell ?? 0, tone: "bad" as const },
+      { label: "Strong Sell", value: stock.strongSell ?? 0, tone: "bad" as const },
+    ];
+    const total = data.reduce((a, b) => a + b.value, 0) || 1;
+    return data.map((d) => ({ ...d, pct: (d.value / total) * 100 }));
+  }, [stock]);
+
+  const changes = useMemo(
+    () => (stock?.targetChanges ?? []).filter((c) => Date.now() - c.date < 180 * 864e5).slice(0, 12),
+    [stock],
+  );
+
+  if (!symbol) return null;
+  const watched = isWatched(symbol);
+
+  return (
+    <Dialog open={!!symbol} onClose={onClose} wide>
+      <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-bold">{symbol}</h2>
+            {row ? <Badge tone="accent">Score {fmtNum(row.score, 0)}</Badge> : null}
+            {stock ? <Badge tone="default">{stock.source}</Badge> : null}
+          </div>
+          <div className="text-sm text-muted">{stock?.name ?? "Loading…"} {stock?.sector ? `· ${stock.sector}` : ""}</div>
+        </div>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => (watched ? removeWatch(symbol) : addWatch(symbol, row?.upsidePct ?? null))}
+          >
+            <Star size={14} className={watched ? "fill-warn text-warn" : ""} />
+            {watched ? "Watching" : "Watch"}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            title="Open on Yahoo Finance"
+            onClick={() => window.open(`https://finance.yahoo.com/quote/${symbol}`, "_blank")}
+          >
+            <ExternalLink size={16} />
+          </Button>
+          <Button variant="ghost" size="icon" onClick={onClose}>
+            <X size={16} />
+          </Button>
+        </div>
+      </div>
+
+      <div className="max-h-[75vh] overflow-y-auto p-5">
+        {loading && !stock ? <div className="text-sm text-muted">Loading {symbol}…</div> : null}
+
+        {stock ? (
+          <>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <Stat label="Price" value={fmtMoney(stock.price, stock.currency)} />
+              <Stat label="Avg target" value={fmtMoney(stock.targetMean, stock.currency)} />
+              <Stat
+                label="Upside"
+                value={fmtPct(row?.upsidePct)}
+                tone={(row?.upsidePct ?? 0) >= 0 ? "good" : "bad"}
+              />
+              <Stat label="Risk / reward" value={fmtNum(row?.riskReward, 2)} />
+              <Stat label="Analysts" value={stock.analystCount ? String(stock.analystCount) : "—"} />
+              <Stat label="Consensus" value={recLabel(stock.recommendationKey, stock.recommendationMean)} />
+              <Stat label="Low / High target" value={`${fmtMoney(stock.targetLow)} – ${fmtMoney(stock.targetHigh)}`} />
+              <Stat label="Market cap" value={stock.marketCap ? `$${fmtCompact(stock.marketCap)}` : "—"} />
+            </div>
+
+            {ratings.some((r) => r.value > 0) ? (
+              <div className="mt-5">
+                <div className="mb-2 text-sm font-semibold">Analyst ratings</div>
+                <div className="flex h-3 w-full overflow-hidden rounded-full bg-surface-2">
+                  {ratings.map((r) => (
+                    <div
+                      key={r.label}
+                      title={`${r.label}: ${r.value}`}
+                      style={{ width: `${r.pct}%` }}
+                      className={r.tone === "good" ? "bg-good" : r.tone === "warn" ? "bg-warn" : "bg-bad"}
+                    />
+                  ))}
+                </div>
+                <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-muted">
+                  {ratings.map((r) => (
+                    <span key={r.label}>
+                      {r.label}: <span className="text-fg">{r.value}</span> ({r.pct.toFixed(0)}%)
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            <div className="mt-5">
+              <div className="mb-2 text-sm font-semibold">Price vs consensus target (1y)</div>
+              <MultiLineChart series={series} height={200} />
+            </div>
+
+            <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <Stat label="Trailing P/E" value={fmtNum(stock.trailingPE)} />
+              <Stat label="Forward P/E" value={fmtNum(stock.forwardPE)} />
+              <Stat label="EPS" value={fmtNum(stock.eps)} />
+              <Stat
+                label="Earnings growth"
+                value={stock.earningsGrowth != null ? `${(stock.earningsGrowth * 100).toFixed(1)}%` : "—"}
+                tone={(stock.earningsGrowth ?? 0) >= 0 ? "good" : "bad"}
+              />
+              <Stat
+                label="Revenue growth"
+                value={stock.revenueGrowth != null ? `${(stock.revenueGrowth * 100).toFixed(1)}%` : "—"}
+              />
+              <Stat label="Volume" value={fmtCompact(stock.volume)} />
+              <Stat label="Avg volume" value={fmtCompact(stock.avgVolume)} />
+              <Stat label="Industry" value={stock.industry ?? "—"} />
+            </div>
+
+            <div className="mt-5 grid gap-5 lg:grid-cols-2">
+              <div>
+                <div className="mb-2 text-sm font-semibold">Recent analyst actions (180d)</div>
+                <div className="flex flex-col divide-y divide-border/60 rounded-lg border border-border">
+                  {changes.length ? (
+                    changes.map((c, i) => (
+                      <div key={i} className="flex items-center justify-between gap-2 px-3 py-2 text-xs">
+                        <div>
+                          <div className="font-medium">{c.firm}</div>
+                          <div className="text-muted">
+                            {c.from ? `${c.from} → ` : ""}
+                            {c.to ?? c.action}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge tone={c.action === "up" ? "good" : c.action === "down" ? "bad" : "default"}>
+                            {c.action}
+                          </Badge>
+                          <span className="text-muted">{timeAgo(c.date)}</span>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="px-3 py-4 text-xs text-muted">No recent actions available.</div>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <div className="mb-2 text-sm font-semibold">News</div>
+                <div className="flex flex-col divide-y divide-border/60 rounded-lg border border-border">
+                  {news.length ? (
+                    news.slice(0, 6).map((n, i) => (
+                      <a
+                        key={i}
+                        href={n.link}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-3 py-2 text-xs transition-colors hover:bg-surface-2"
+                      >
+                        <div className="font-medium">{n.title}</div>
+                        <div className="text-muted">
+                          {n.publisher} · {n.publishedAt ? timeAgo(n.publishedAt) : ""}
+                        </div>
+                      </a>
+                    ))
+                  ) : (
+                    <div className="px-3 py-4 text-xs text-muted">No headlines available.</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </>
+        ) : null}
+      </div>
+    </Dialog>
+  );
+}
