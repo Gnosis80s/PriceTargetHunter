@@ -25,6 +25,8 @@ falls back to a bundled offline dataset so the UI is never empty.
   analyst coverage, consensus, price-target momentum, composite score and market cap.
 - **Signals** — target dispersion (agreement), price-target revision momentum,
   and a consensus trend built from stored snapshots.
+- **News sentiment** — per-article and aggregate bullish/bearish scores (Alpha
+  Vantage, or Finnhub news-sentiment) shown in the stock detail view.
 - **Universe presets** — Curated (~70) or **S&P 500 (~503)**, plus paste your own
   list. Results **stream in as they load**, with a stop button for long scans.
 - **Filters** — min upside, min/max analysts, market-cap and price ranges,
@@ -114,11 +116,14 @@ If the checkout moves, re-run `./install.sh` (or set `PRICE_TARGET_HUNTER_HOME`)
 | --- | --- | --- | --- |
 | **Yahoo Finance** | No | `quoteSummary` (price, targets, ratings, upgrades), `chart`, `search`, `quote` — via [`yahoo-finance2`](https://github.com/gadicc/node-yahoo-finance2) | Unofficial. Cookie/crumb, retries and queueing handled by the library. Rate-limit friendly usage only. |
 | **Financial Modeling Prep** | Yes | `quote`, `profile`, `price-target-consensus`, `grades-consensus`, `price-target` | ~250 calls/day on free tier. Tries `/stable` then legacy `/api/v3`. |
-| **Finnhub** | Yes | `quote`, `stock/price-target`, `stock/recommendation`, `stock/profile2`, `stock/upgrade-downgrade`, `stock/metric` | 60 calls/min. |
+| **Finnhub** | Yes | `quote`, `stock/price-target`, `stock/recommendation`, `stock/profile2`, `stock/upgrade-downgrade`, `stock/metric`, `news-sentiment` | 60 calls/min. |
+| **Alpha Vantage** | Yes | `NEWS_SENTIMENT` (per-article ticker sentiment) | Optional. ~25 calls/day free — used on demand in the detail view, cached 6h. |
 
-Get keys at <https://site.financialmodelingprep.com/developer/docs> and
-<https://finnhub.io>. Paste them into **Settings → Data sources** (stored only in
-your browser's `localStorage`).
+Get keys at <https://site.financialmodelingprep.com/developer/docs>,
+<https://finnhub.io>, and <https://www.alphavantage.co/support/#api-key>. Paste
+them into **Settings → Data sources** (stored only in your browser's
+`localStorage`). News sentiment uses Alpha Vantage when its key is set, and
+falls back to Finnhub's `news-sentiment` endpoint otherwise.
 
 ### Rate limiting & caching
 
@@ -199,7 +204,8 @@ price-target-hunter/
    │  ├─ index.ts              # hybrid orchestration + fallback + merge
    │  ├─ yahoo.ts              # Yahoo Finance adapter
    │  ├─ fmp.ts                # Financial Modeling Prep adapter
-   │  └─ finnhub.ts            # Finnhub adapter
+   │  ├─ finnhub.ts            # Finnhub adapter
+   │  └─ sentiment.ts          # news sentiment (Alpha Vantage / Finnhub)
    ├─ lib/
    │  ├─ types.ts              # StockData, ScreenerRow, Filters, Settings…
    │  ├─ scoring.ts            # upside / risk-reward / momentum / score

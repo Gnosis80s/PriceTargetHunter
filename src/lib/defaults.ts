@@ -25,6 +25,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   yahooEnabled: true,
   fmpApiKey: "",
   finnhubApiKey: "",
+  alphaVantageApiKey: "",
   demoFallback: true,
   notifications: false,
   alertMinNewUpside: 30,

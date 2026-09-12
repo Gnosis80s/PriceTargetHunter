@@ -92,6 +92,8 @@ export interface AppSettings {
   yahooEnabled: boolean;
   fmpApiKey: string;
   finnhubApiKey: string;
+  /** Optional. Enables per-article news sentiment (Alpha Vantage NEWS_SENTIMENT). */
+  alphaVantageApiKey: string;
   demoFallback: boolean;
   notifications: boolean;
   alertMinNewUpside: number;

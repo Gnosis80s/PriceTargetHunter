@@ -97,6 +97,17 @@ export function SettingsPanel() {
               onChange={(e) => updateSettings({ finnhubApiKey: e.target.value })}
             />
           </Field>
+          <Field
+            label="Alpha Vantage API key (news sentiment)"
+            hint="Optional. Adds per-article sentiment to the stock detail view. ~25 req/day free."
+          >
+            <Input
+              type="password"
+              placeholder="alphavantage api key"
+              value={settings.alphaVantageApiKey}
+              onChange={(e) => updateSettings({ alphaVantageApiKey: e.target.value })}
+            />
+          </Field>
           <label className="flex items-center justify-between text-sm">
             <span>
               Offline demo fallback <span className="text-xs text-muted">(bundled sample data)</span>

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ExternalLink, Star, X } from "lucide-react";
 import type { NewsItem, YahooChartPoint } from "../providers/yahoo";
 import { fetchYahooChart, fetchYahooNews } from "../providers/yahoo";
+import { fetchSentiment, type NewsSentiment } from "../providers/sentiment";
 import { fetchStock } from "../providers";
 import type { StockData } from "../lib/types";
 import { toRow } from "../lib/scoring";
@@ -26,6 +27,7 @@ export function StockDetail({ symbol, onClose }: { symbol: string | null; onClos
   const [stock, setStock] = useState<StockData | null>(null);
   const [chart, setChart] = useState<YahooChartPoint[]>([]);
   const [news, setNews] = useState<NewsItem[]>([]);
+  const [sentiment, setSentiment] = useState<NewsSentiment | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -35,17 +37,20 @@ export function StockDetail({ symbol, onClose }: { symbol: string | null; onClos
     setStock(null);
     setChart([]);
     setNews([]);
+    setSentiment(null);
     void (async () => {
       const { data } = await fetchStock(symbol, settings).catch(() => ({ data: null as unknown as StockData }));
       if (active && data) setStock(data);
       if (settings.yahooEnabled) {
-        const [c, n] = await Promise.all([
+        const [c, n, s] = await Promise.all([
           fetchYahooChart(symbol, "1y", "1d").catch(() => []),
           fetchYahooNews(symbol).catch(() => []),
+          fetchSentiment(symbol, settings).catch(() => null),
         ]);
         if (active) {
           setChart(c);
           setNews(n);
+          setSentiment(s);
         }
       }
       if (active) setLoading(false);
@@ -178,6 +183,11 @@ export function StockDetail({ symbol, onClose }: { symbol: string | null; onClos
                 value={consensusTrend ? fmtPct(consensusTrend.pct) : "—"}
                 tone={consensusTrend ? (consensusTrend.pct >= 0 ? "good" : "bad") : undefined}
               />
+              <Stat
+                label="News sentiment"
+                value={sentiment ? `${sentiment.label} (${fmtNum(sentiment.score, 2)})` : "—"}
+                tone={sentiment ? (sentiment.score >= 0.15 ? "good" : sentiment.score <= -0.15 ? "bad" : undefined) : undefined}
+              />
               <Stat label="Analysts" value={stock.analystCount ? String(stock.analystCount) : "—"} />
               <Stat label="Consensus" value={recLabel(stock.recommendationKey, stock.recommendationMean)} />
               <Stat label="Low / High target" value={`${fmtMoney(stock.targetLow)} – ${fmtMoney(stock.targetHigh)}`} />
@@ -274,9 +284,40 @@ export function StockDetail({ symbol, onClose }: { symbol: string | null; onClos
               </div>
 
               <div>
-                <div className="mb-2 text-sm font-semibold">News</div>
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <div className="text-sm font-semibold">News</div>
+                  {sentiment ? (
+                    <span className="text-right text-[11px] text-muted">
+                      {sentiment.source === "alphavantage" ? "Alpha Vantage" : "Finnhub"}
+                      {sentiment.bullishPct != null
+                        ? ` · ${sentiment.bullishPct.toFixed(0)}% bullish / ${(sentiment.bearishPct ?? 0).toFixed(0)}% bearish`
+                        : ""}
+                      {sentiment.articles ? ` · ${sentiment.articles} articles` : ""}
+                    </span>
+                  ) : null}
+                </div>
                 <div className="flex flex-col divide-y divide-border/60 rounded-lg border border-border">
-                  {news.length ? (
+                  {sentiment?.top.length ? (
+                    sentiment.top.map((a, i) => (
+                      <a
+                        key={i}
+                        href={a.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-3 py-2 text-xs transition-colors hover:bg-surface-2"
+                      >
+                        <div className="font-medium">{a.title}</div>
+                        <div className="mt-0.5 flex items-center gap-2 text-muted">
+                          <span>
+                            {a.source} · {a.time ? timeAgo(a.time) : ""}
+                          </span>
+                          <Badge tone={a.score >= 0.15 ? "good" : a.score <= -0.15 ? "bad" : "default"}>
+                            {a.label}
+                          </Badge>
+                        </div>
+                      </a>
+                    ))
+                  ) : news.length ? (
                     news.slice(0, 6).map((n, i) => (
                       <a
                         key={i}
@@ -292,7 +333,11 @@ export function StockDetail({ symbol, onClose }: { symbol: string | null; onClos
                       </a>
                     ))
                   ) : (
-                    <div className="px-3 py-4 text-xs text-muted">No headlines available.</div>
+                    <div className="px-3 py-4 text-xs text-muted">
+                      {settings.alphaVantageApiKey || settings.finnhubApiKey
+                        ? "No headlines available."
+                        : "Add an Alpha Vantage or Finnhub key in Settings to score headlines."}
+                    </div>
                   )}
                 </div>
               </div>
