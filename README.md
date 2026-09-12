@@ -34,9 +34,10 @@ falls back to a bundled offline dataset so the UI is never empty.
   dispersion, recent-upgrades-only.
 - **Dashboard** — top opportunities, sector heat map of average upside, trending
   upgrades, KPI tiles.
-- **Stock detail** — price vs consensus target chart, historical target moves
-  (built from locally stored snapshots), ratings breakdown, key metrics, recent
-  analyst actions and news headlines.
+- **Stock detail** — price vs consensus target chart with a target-history line
+  built from dated analyst actions (shows on day one), plus a stored-snapshot
+  line for longer timelines. Loading/error/retry states, ratings breakdown, key
+  metrics, recent analyst actions and news headlines.
 - **Watchlist** — save symbols, see upside change since you added them.
 - **Alerts** — desktop notifications and configurable JSON webhooks when a
   watched name moves or a new high-upside name appears.
@@ -209,6 +210,7 @@ price-target-hunter/
    ├─ lib/
    │  ├─ types.ts              # StockData, ScreenerRow, Filters, Settings…
    │  ├─ scoring.ts            # upside / risk-reward / momentum / score
+   │  ├─ history.ts            # target-history series from analyst actions
    │  ├─ screener.ts           # applyFilters + sortRows
    │  ├─ cache.ts              # localStorage TTL cache
    │  ├─ concurrency.ts        # mapLimit + RateLimiter

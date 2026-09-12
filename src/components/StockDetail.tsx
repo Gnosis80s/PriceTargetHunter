@@ -6,8 +6,10 @@ import { fetchSentiment, type NewsSentiment } from "../providers/sentiment";
 import { fetchStock } from "../providers";
 import type { StockData } from "../lib/types";
 import { toRow } from "../lib/scoring";
+import { runningTargetAverage } from "../lib/history";
 import { useApp } from "../store/AppStore";
 import { Badge, Button, Dialog } from "./ui";
+import { ErrorBoundary } from "./ErrorBoundary";
 import { MultiLineChart, type Series } from "./LineChart";
 import { fmtCompact, fmtMoney, fmtNum, fmtPct, recLabel, timeAgo } from "../lib/utils";
 
@@ -29,6 +31,9 @@ export function StockDetail({ symbol, onClose }: { symbol: string | null; onClos
   const [news, setNews] = useState<NewsItem[]>([]);
   const [sentiment, setSentiment] = useState<NewsSentiment | null>(null);
   const [loading, setLoading] = useState(false);
+  const [chartLoading, setChartLoading] = useState(false);
+  const [chartError, setChartError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     if (!symbol) return;
@@ -38,19 +43,26 @@ export function StockDetail({ symbol, onClose }: { symbol: string | null; onClos
     setChart([]);
     setNews([]);
     setSentiment(null);
+    setChartError(false);
     void (async () => {
       const { data } = await fetchStock(symbol, settings).catch(() => ({ data: null as unknown as StockData }));
       if (active && data) setStock(data);
       if (settings.yahooEnabled) {
+        setChartLoading(true);
+        const chartPromise = fetchYahooChart(symbol, "1y", "1d")
+          .then((r) => ({ ok: true as const, points: r }))
+          .catch(() => ({ ok: false as const, points: [] as YahooChartPoint[] }));
         const [c, n, s] = await Promise.all([
-          fetchYahooChart(symbol, "1y", "1d").catch(() => []),
+          chartPromise,
           fetchYahooNews(symbol).catch(() => []),
           fetchSentiment(symbol, settings).catch(() => null),
         ]);
         if (active) {
-          setChart(c);
+          setChart(c.points);
+          setChartError(!c.ok);
           setNews(n);
           setSentiment(s);
+          setChartLoading(false);
         }
       }
       if (active) setLoading(false);
@@ -58,28 +70,36 @@ export function StockDetail({ symbol, onClose }: { symbol: string | null; onClos
     return () => {
       active = false;
     };
-  }, [symbol, settings]);
+  }, [symbol, settings, reloadKey]);
 
   const row = useMemo(() => (stock ? toRow(stock) : null), [stock]);
 
   const series = useMemo<Series[]>(() => {
     const out: Series[] = [];
     if (chart.length) {
-      out.push({ name: "Price", color: "var(--accent)", points: chart.map((p) => ({ t: p.t, v: p.close })) });
+      out.push({ name: "Price", color: "#3b82f6", points: chart.map((p) => ({ t: p.t, v: p.close })) });
       if (stock?.targetMean) {
         out.push({
           name: "Target",
-          color: "var(--good)",
+          color: "#22c55e",
           points: chart.map((p) => ({ t: p.t, v: stock.targetMean as number })),
         });
       }
     }
-    const snaps = snapshots[symbol ?? ""] ?? [];
+
+    // Consensus target trajectory from dated analyst actions (available now).
+    const fromActions = runningTargetAverage(stock?.targetChanges);
+    if (fromActions.length >= 2) {
+      out.push({ name: "Target history", color: "#f59e0b", points: fromActions });
+    }
+
+    // Longer timeline from locally stored snapshots (accumulates over time).
+    const snaps = (snapshots[symbol ?? ""] ?? []).filter((s) => s.targetMean != null);
     if (snaps.length >= 2) {
       out.push({
-        name: "Avg target (history)",
-        color: "var(--warn)",
-        points: snaps.filter((s) => s.targetMean != null).map((s) => ({ t: s.date, v: s.targetMean as number })),
+        name: "Stored avg target",
+        color: "#94a3b8",
+        points: snaps.map((s) => ({ t: s.date, v: s.targetMean as number })),
       });
     }
     return out;
@@ -218,8 +238,46 @@ export function StockDetail({ symbol, onClose }: { symbol: string | null; onClos
             ) : null}
 
             <div className="mt-5">
-              <div className="mb-2 text-sm font-semibold">Price vs consensus target (1y)</div>
-              <MultiLineChart series={series} height={200} />
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div className="text-sm font-semibold">Price vs consensus target (1y)</div>
+                {settings.yahooEnabled && chartError ? (
+                  <Button size="sm" variant="ghost" onClick={() => setReloadKey((k) => k + 1)}>
+                    Retry
+                  </Button>
+                ) : null}
+              </div>
+              {!settings.yahooEnabled ? (
+                <div className="flex h-40 items-center justify-center rounded-lg border border-border text-xs text-muted">
+                  Enable Yahoo Finance in Settings to load price history.
+                </div>
+              ) : series.length === 0 && chartLoading ? (
+                <div className="flex h-40 items-center justify-center rounded-lg border border-border text-xs text-muted">
+                  Loading chart…
+                </div>
+              ) : series.length === 0 ? (
+                <div className="flex h-40 flex-col items-center justify-center gap-1 rounded-lg border border-bad/30 bg-bad/5 px-4 text-center text-xs text-bad">
+                  <span>No chart data available for {symbol}.</span>
+                  <span className="text-muted">
+                    {chartError ? "Yahoo price history failed (often a temporary rate limit)." : "No analyst target history found."}
+                  </span>
+                  {chartError ? (
+                    <Button size="sm" variant="secondary" className="mt-1" onClick={() => setReloadKey((k) => k + 1)}>
+                      Retry
+                    </Button>
+                  ) : null}
+                </div>
+              ) : (
+                <>
+                  {chartError ? (
+                    <div className="mb-2 rounded-md border border-warn/30 bg-warn/10 px-2 py-1 text-[11px] text-warn">
+                      Price history unavailable — showing target history only.
+                    </div>
+                  ) : null}
+                  <ErrorBoundary label="Couldn't render the chart">
+                    <MultiLineChart series={series} height={200} />
+                  </ErrorBoundary>
+                </>
+              )}
             </div>
 
             <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
