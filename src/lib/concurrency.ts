@@ -24,6 +24,25 @@ export async function mapLimit<T, R>(
   return results;
 }
 
+/**
+ * Retry an async operation with exponential backoff and jitter. Used to ride
+ * out transient provider failures (429s, 5xx, network blips).
+ */
+export async function withRetry<T>(fn: () => Promise<T>, attempts = 2, baseMs = 500): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      if (attempt < attempts - 1) {
+        await sleep(baseMs * 2 ** attempt + Math.random() * 250);
+      }
+    }
+  }
+  throw lastError;
+}
+
 /** Simple token bucket used to stay under provider rate limits. */
 export class RateLimiter {
   private tokens: number;

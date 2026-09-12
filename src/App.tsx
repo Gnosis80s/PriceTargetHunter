@@ -19,7 +19,7 @@ import { FiltersPanel } from "./components/FiltersPanel";
 import { StockDetail } from "./components/StockDetail";
 import { WatchlistView } from "./components/WatchlistView";
 import { SettingsPanel } from "./components/SettingsPanel";
-import { Button, ProgressBar } from "./components/ui";
+import { Button, Dialog, ProgressBar } from "./components/ui";
 import { DEFAULT_FILTERS } from "./lib/defaults";
 import { downloadCsv } from "./lib/csv";
 import { ALL_SECTORS } from "./data/universe";
@@ -39,6 +39,7 @@ export default function App() {
   const { rows, allRows, scanning, progress, errors, lastUpdated, scan, stopScan } = useScreener();
   const [tab, setTab] = useState<Tab>("dashboard");
   const [selected, setSelected] = useState<string | null>(null);
+  const [showErrors, setShowErrors] = useState(false);
 
   const sectors = useMemo(
     () => Array.from(new Set([...ALL_SECTORS, ...allRows.map((r) => r.sector).filter(Boolean) as string[]])).sort(),
@@ -116,10 +117,13 @@ export default function App() {
 
       <main className="mx-auto w-full max-w-[1500px] flex-1 px-4 py-4">
         {errors.length ? (
-          <div className="mb-3 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-warn">
+          <button
+            onClick={() => setShowErrors(true)}
+            className="mb-3 w-full rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-left text-xs text-warn transition-colors hover:bg-warn/15"
+          >
             {errors.length} symbol{errors.length === 1 ? "" : "s"} failed to load ({errors.slice(0, 5).map((e) => e.symbol).join(", ")}
-            {errors.length > 5 ? "…" : ""}). Check the data source settings or try again.
-          </div>
+            {errors.length > 5 ? "…" : ""}). Click for details.
+          </button>
         ) : null}
 
         {tab === "dashboard" ? <Dashboard rows={allRows} lastUpdated={lastUpdated} onSelect={setSelected} /> : null}
@@ -153,6 +157,23 @@ export default function App() {
       </footer>
 
       <StockDetail symbol={selected} onClose={() => setSelected(null)} />
+
+      <Dialog open={showErrors} onClose={() => setShowErrors(false)}>
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          <div className="text-sm font-semibold">Load failures ({errors.length})</div>
+          <Button size="sm" variant="ghost" onClick={() => setShowErrors(false)}>
+            Close
+          </Button>
+        </div>
+        <div className="max-h-[60vh] divide-y divide-border/60 overflow-y-auto">
+          {errors.map((e) => (
+            <div key={e.symbol} className="flex items-start gap-3 px-4 py-2 text-xs">
+              <span className="w-20 shrink-0 font-semibold">{e.symbol}</span>
+              <span className="text-muted">{e.message || "Unknown error"}</span>
+            </div>
+          ))}
+        </div>
+      </Dialog>
     </div>
   );
 }

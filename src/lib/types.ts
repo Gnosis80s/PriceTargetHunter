@@ -6,6 +6,12 @@ export interface TargetChange {
   action: string;
   from?: string;
   to?: string;
+  /** Previous price target (if the action adjusted one). */
+  fromTarget?: number;
+  /** New price target. */
+  toTarget?: number;
+  /** Yahoo's priceTargetAction: Raises / Lowers / Maintains / Announces / Adjusts. */
+  priceTargetAction?: string;
 }
 
 /** Canonical, provider-agnostic representation of a stock + its analyst consensus. */
@@ -54,6 +60,10 @@ export interface ScreenerRow extends StockData {
   upsidePct: number | null;
   riskReward: number | null;
   momentum: number;
+  /** Target-range width relative to the mean (uncertainty; lower = tighter agreement), in %. */
+  dispersion: number | null;
+  /** Average % change of analyst price targets over the momentum window. */
+  targetMomentumPct: number | null;
   score: number;
 }
 
@@ -68,6 +78,8 @@ export interface Filters {
   sectors: string[];
   minRecommendation: number; // 1..5 (lower = more bullish), include stocks <= this
   minRiskReward: number;
+  /** Skip names whose target range is wider than this (% of mean). 1000 = no limit. */
+  maxDispersion: number;
   onlyRecentUpgrades: boolean;
   onlyWithTargets: boolean;
 }

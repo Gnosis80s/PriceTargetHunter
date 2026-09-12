@@ -21,12 +21,15 @@ falls back to a bundled offline dataset so the UI is never empty.
 
 ## Features
 
-- **Screener** — sortable table with upside %, risk/reward, analyst coverage,
-  consensus, 90-day target momentum, composite score and market cap.
+- **Screener** — sortable table with upside %, risk/reward, target dispersion,
+  analyst coverage, consensus, price-target momentum, composite score and market cap.
+- **Signals** — target dispersion (agreement), price-target revision momentum,
+  and a consensus trend built from stored snapshots.
 - **Universe presets** — Curated (~70) or **S&P 500 (~503)**, plus paste your own
   list. Results **stream in as they load**, with a stop button for long scans.
 - **Filters** — min upside, min/max analysts, market-cap and price ranges,
-  sector, minimum consensus rating, minimum risk/reward, recent-upgrades-only.
+  sector, minimum consensus rating, minimum risk/reward, maximum target
+  dispersion, recent-upgrades-only.
 - **Dashboard** — top opportunities, sector heat map of average upside, trending
   upgrades, KPI tiles.
 - **Stock detail** — price vs consensus target chart, historical target moves
@@ -130,23 +133,41 @@ your browser's `localStorage`).
 
 ---
 
-## How upside, risk/reward and score are computed
+## Signals, upside and scoring
 
 `src/lib/scoring.ts`:
 
 ```
-Upside %        = (targetMean − price) / price × 100
-Risk / reward   = (targetMean − price) / (price − targetLow)
-Momentum        = #upgrades + #initiations − #downgrades over the last 90 days
+Upside %          = (targetMean − price) / price × 100
+Risk / reward     = (targetMean − price) / (price − targetLow)
+Dispersion %      = (targetHigh − targetLow) / targetMean × 100   (uncertainty)
+Target Δ %        = average % change of analyst price targets (90d)
+Momentum          = Σ price-target revisions (a 5% raise ≈ +1) ± grade changes (90d)
 ```
 
-Composite **score (0–100)**:
+Price-target revisions dominate momentum; grade-only changes fall back to ±1.
+Older than 90 days is ignored and a single revision is capped at ±3.
+
+Composite **score (0–100)** — tight analyst agreement is rewarded:
 
 ```
-45%  upside score        (upside / 60%, capped)
-20%  consensus score     (Strong Buy 1 → Strong Sell 5)
-20%  momentum score      (50 ± recent upgrades)
-15%  coverage score      (analyst count / 20, capped)
+40%  upside score        (upside / 60%, capped)
+18%  consensus score     (Strong Buy 1 → Strong Sell 5)
+18%  momentum score      (50 ± recent target revisions)
+12%  coverage score      (analyst count / 20, capped)
+12%  agreement score     (100 − dispersion × 0.8)
+```
+
+The screener surfaces `Disp` (dispersion) and `Tgt Δ` (target momentum) columns,
+a **Max dispersion** filter, and a **Consensus trend (30d)** in the detail view
+computed from locally stored snapshots. Providers are retried with exponential
+backoff, and failed symbols can be inspected (with per-provider reasons) from
+the banner above the results.
+
+Unit tests cover scoring, momentum, filters and CSV export:
+
+```bash
+npm test   # vitest
 ```
 
 ---

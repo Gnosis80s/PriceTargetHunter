@@ -39,6 +39,13 @@ export function FiltersPanel({
             onChange={(e) => onChange({ minRiskReward: num(e.target.value, 0) })}
           />
         </Field>
+        <Field label="Max dispersion %" hint="Tighter target ranges only (1000 = any)">
+          <Input
+            type="number"
+            value={filters.maxDispersion}
+            onChange={(e) => onChange({ maxDispersion: num(e.target.value, 1000) })}
+          />
+        </Field>
         <Field label="Min analysts">
           <Input
             type="number"

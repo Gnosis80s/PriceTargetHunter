@@ -4,6 +4,8 @@ export type SortKey =
   | "score"
   | "upsidePct"
   | "riskReward"
+  | "dispersion"
+  | "targetMomentumPct"
   | "analystCount"
   | "marketCap"
   | "momentum"
@@ -31,6 +33,8 @@ export function applyFilters(rows: ScreenerRow[], f: Filters): ScreenerRow[] {
     }
 
     if (f.minRiskReward > 0 && (r.riskReward ?? 0) < f.minRiskReward) return false;
+
+    if (f.maxDispersion < 1000 && r.dispersion != null && r.dispersion > f.maxDispersion) return false;
 
     if (f.onlyRecentUpgrades && r.momentum <= 0) return false;
 

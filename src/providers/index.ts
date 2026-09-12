@@ -1,6 +1,6 @@
 import type { AppSettings, StockData } from "../lib/types";
 import { cacheGet, cacheSet } from "../lib/cache";
-import { RateLimiter, mapLimit, sleep } from "../lib/concurrency";
+import { RateLimiter, mapLimit, sleep, withRetry } from "../lib/concurrency";
 import { demoData } from "../data/demo";
 import { fetchYahoo } from "./yahoo";
 import { fetchFmp } from "./fmp";
@@ -50,12 +50,15 @@ function mergeMissing(base: StockData, extra: StockData): StockData {
 const hasTargets = (d: StockData) => d.targetMean != null || d.targetMedian != null;
 const isUsable = (d: StockData) => d.price != null && d.price > 0;
 
-async function tryProvider(p: Provider): Promise<StockData | null> {
+async function tryProvider(p: Provider, reasons?: string[]): Promise<StockData | null> {
   try {
     await p.limiter.acquire();
-    const data = await p.run();
-    return isUsable(data) ? data : null;
-  } catch {
+    const data = await withRetry(() => p.run(), 2);
+    if (isUsable(data)) return data;
+    reasons?.push(`${p.name}: no price data`);
+    return null;
+  } catch (err) {
+    reasons?.push(`${p.name}: ${(err as Error)?.message ?? "failed"}`);
     return null;
   }
 }
@@ -79,17 +82,18 @@ export async function fetchStock(
   }
 
   const providers = providersFor(sym, settings);
+  const reasons: string[] = [];
   let primary: StockData | null = null;
 
   for (const p of providers) {
-    primary = await tryProvider(p);
+    primary = await tryProvider(p, reasons);
     if (primary) break;
   }
 
   if (primary && !hasTargets(primary)) {
     for (const p of providers) {
       if (p.name === primary.source) continue;
-      const extra = await tryProvider(p);
+      const extra = await tryProvider(p, reasons);
       if (extra) {
         primary = mergeMissing(primary, extra);
         if (hasTargets(primary)) break;
@@ -104,7 +108,7 @@ export async function fetchStock(
     }
     const expired = cacheGet<StockData>(cacheKey, -1);
     if (expired) return { data: expired, stale: true, fromCache: true };
-    throw new Error(`No data for ${sym}`);
+    throw new Error(reasons.length ? reasons.join("; ") : `No data for ${sym}`);
   }
 
   cacheSet(cacheKey, primary);

@@ -6,14 +6,16 @@ import { fmtCompact, fmtMoney, fmtNum, fmtPct, recLabel } from "../lib/utils";
 import { sortRows, type SortKey } from "../lib/screener";
 import { useApp } from "../store/AppStore";
 
-const COLUMNS: { key: SortKey | "consensus"; label: string; align?: "right"; sortable: boolean }[] = [
+const COLUMNS: { key: SortKey | "consensus"; label: string; align?: "right"; sortable: boolean; title?: string }[] = [
   { key: "symbol", label: "Symbol", sortable: true },
   { key: "price", label: "Price", align: "right", sortable: false },
   { key: "upsidePct", label: "Upside", align: "right", sortable: true },
   { key: "riskReward", label: "R/R", align: "right", sortable: true },
+  { key: "dispersion", label: "Disp", align: "right", sortable: true, title: "Target-range width vs mean — lower = tighter agreement" },
   { key: "analystCount", label: "Analysts", align: "right", sortable: true },
   { key: "consensus", label: "Consensus", sortable: false },
   { key: "momentum", label: "Momentum", align: "right", sortable: true },
+  { key: "targetMomentumPct", label: "Tgt Δ", align: "right", sortable: true, title: "Average analyst price-target change (90d)" },
   { key: "score", label: "Score", align: "right", sortable: true },
   { key: "marketCap", label: "Mkt Cap", align: "right", sortable: true },
 ];
@@ -41,6 +43,7 @@ export function ScreenerTable({ rows, onSelect }: { rows: ScreenerRow[]; onSelec
             {COLUMNS.map((c) => (
               <th
                 key={c.key}
+                title={c.title}
                 className={`whitespace-nowrap px-3 py-2 font-medium ${c.align === "right" ? "text-right" : ""} ${
                   c.sortable ? "cursor-pointer select-none hover:text-fg" : ""
                 }`}
@@ -79,6 +82,9 @@ export function ScreenerTable({ rows, onSelect }: { rows: ScreenerRow[]; onSelec
                   {fmtPct(r.upsidePct)}
                 </td>
                 <td className="px-3 py-2 text-right tabular">{fmtNum(r.riskReward, 1)}</td>
+                <td className={`px-3 py-2 text-right tabular ${(r.dispersion ?? 999) <= 40 ? "text-good" : (r.dispersion ?? 0) >= 120 ? "text-bad" : ""}`}>
+                  {r.dispersion == null ? "—" : `${fmtNum(r.dispersion, 0)}%`}
+                </td>
                 <td className="px-3 py-2 text-right tabular">{r.analystCount ?? "—"}</td>
                 <td className="px-3 py-2">
                   <Badge
@@ -92,6 +98,9 @@ export function ScreenerTable({ rows, onSelect }: { rows: ScreenerRow[]; onSelec
                 <td className={`px-3 py-2 text-right tabular ${r.momentum > 0 ? "text-good" : r.momentum < 0 ? "text-bad" : ""}`}>
                   {r.momentum > 0 ? "+" : ""}
                   {fmtNum(r.momentum, 0)}
+                </td>
+                <td className={`px-3 py-2 text-right tabular ${(r.targetMomentumPct ?? 0) > 0 ? "text-good" : (r.targetMomentumPct ?? 0) < 0 ? "text-bad" : ""}`}>
+                  {r.targetMomentumPct == null ? "—" : fmtPct(r.targetMomentumPct)}
                 </td>
                 <td className="px-3 py-2 text-right">
                   <div className="flex items-center justify-end gap-2">

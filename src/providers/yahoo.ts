@@ -39,13 +39,20 @@ export interface NewsItem {
 function mapGradeHistory(history: any[] | undefined): TargetChange[] {
   if (!Array.isArray(history)) return [];
   return history
-    .map((h) => ({
-      date: epochMs(h?.epochGradeDate),
-      firm: String(h?.firm ?? "Unknown"),
-      action: String(h?.action ?? "main"),
-      from: h?.fromGrade != null ? String(h.fromGrade) : undefined,
-      to: h?.toGrade != null ? String(h.toGrade) : undefined,
-    }))
+    .map((h) => {
+      const fromTarget = num(h?.priorPriceTarget);
+      const toTarget = num(h?.currentPriceTarget);
+      return {
+        date: epochMs(h?.epochGradeDate),
+        firm: String(h?.firm ?? "Unknown"),
+        action: String(h?.action ?? "main"),
+        from: h?.fromGrade != null ? String(h.fromGrade) : undefined,
+        to: h?.toGrade != null ? String(h.toGrade) : undefined,
+        fromTarget: fromTarget && fromTarget > 0 ? fromTarget : undefined,
+        toTarget: toTarget && toTarget > 0 ? toTarget : undefined,
+        priceTargetAction: h?.priceTargetAction ? String(h.priceTargetAction) : undefined,
+      };
+    })
     .filter((c) => c.date > 0)
     .sort((a, b) => b.date - a.date)
     .slice(0, 60);

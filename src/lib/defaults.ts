@@ -12,6 +12,7 @@ export const DEFAULT_FILTERS: Filters = {
   sectors: [],
   minRecommendation: 5,
   minRiskReward: 0,
+  maxDispersion: 1000,
   onlyRecentUpgrades: false,
   onlyWithTargets: true,
 };

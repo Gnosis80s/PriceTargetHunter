@@ -98,6 +98,20 @@ export function StockDetail({ symbol, onClose }: { symbol: string | null; onClos
     [stock],
   );
 
+  const consensusTrend = useMemo(() => {
+    const snaps = (snapshots[symbol ?? ""] ?? []).filter((s) => s.targetMean != null);
+    if (snaps.length < 2) return null;
+    const cutoff = Date.now() - 30 * 864e5;
+    const recent = snaps.filter((s) => s.date >= cutoff);
+    const base = recent.length ? recent[0] : snaps[0];
+    const last = snaps[snaps.length - 1];
+    if (base.targetMean == null || last.targetMean == null || base.targetMean <= 0) return null;
+    return {
+      pct: ((last.targetMean - base.targetMean) / base.targetMean) * 100,
+      days: Math.max(0, Math.round((last.date - base.date) / 864e5)),
+    };
+  }, [snapshots, symbol]);
+
   if (!symbol) return null;
   const watched = isWatched(symbol);
 
@@ -149,6 +163,21 @@ export function StockDetail({ symbol, onClose }: { symbol: string | null; onClos
                 tone={(row?.upsidePct ?? 0) >= 0 ? "good" : "bad"}
               />
               <Stat label="Risk / reward" value={fmtNum(row?.riskReward, 2)} />
+              <Stat
+                label="Dispersion"
+                value={row?.dispersion == null ? "—" : `${fmtNum(row.dispersion, 0)}%`}
+                tone={row?.dispersion != null && row.dispersion <= 40 ? "good" : undefined}
+              />
+              <Stat
+                label="Target Δ (90d)"
+                value={row?.targetMomentumPct == null ? "—" : fmtPct(row.targetMomentumPct)}
+                tone={row?.targetMomentumPct != null ? (row.targetMomentumPct >= 0 ? "good" : "bad") : undefined}
+              />
+              <Stat
+                label={consensusTrend ? `Consensus (${consensusTrend.days}d)` : "Consensus trend"}
+                value={consensusTrend ? fmtPct(consensusTrend.pct) : "—"}
+                tone={consensusTrend ? (consensusTrend.pct >= 0 ? "good" : "bad") : undefined}
+              />
               <Stat label="Analysts" value={stock.analystCount ? String(stock.analystCount) : "—"} />
               <Stat label="Consensus" value={recLabel(stock.recommendationKey, stock.recommendationMean)} />
               <Stat label="Low / High target" value={`${fmtMoney(stock.targetLow)} – ${fmtMoney(stock.targetHigh)}`} />
@@ -213,11 +242,26 @@ export function StockDetail({ symbol, onClose }: { symbol: string | null; onClos
                           <div className="text-muted">
                             {c.from ? `${c.from} → ` : ""}
                             {c.to ?? c.action}
+                            {c.toTarget != null ? (
+                              <span className={c.fromTarget && c.toTarget > c.fromTarget ? "text-good" : c.fromTarget && c.toTarget < c.fromTarget ? "text-bad" : ""}>
+                                {"  ·  "}
+                                {c.fromTarget != null ? `${fmtMoney(c.fromTarget)} → ` : ""}
+                                {fmtMoney(c.toTarget)}
+                              </span>
+                            ) : null}
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          <Badge tone={c.action === "up" ? "good" : c.action === "down" ? "bad" : "default"}>
-                            {c.action}
+                          <Badge
+                            tone={
+                              c.priceTargetAction === "Raises" || c.action === "up"
+                                ? "good"
+                                : c.priceTargetAction === "Lowers" || c.action === "down"
+                                  ? "bad"
+                                  : "default"
+                            }
+                          >
+                            {c.priceTargetAction ?? c.action}
                           </Badge>
                           <span className="text-muted">{timeAgo(c.date)}</span>
                         </div>
