@@ -98,6 +98,8 @@ export interface ScreenerRow extends StockData {
   qualityScore: number | null;
   growthScore: number | null;
   healthScore: number | null;
+  /** How trustworthy the analyst consensus is (agreement, coverage, freshness, tier-1). */
+  confidenceScore: number | null;
   score: number;
 }
 
@@ -109,8 +111,7 @@ export interface ScoreWeights {
   upside: number;
   consensus: number;
   momentum: number;
-  coverage: number;
-  agreement: number;
+  confidence: number;
   value: number;
   quality: number;
   growth: number;

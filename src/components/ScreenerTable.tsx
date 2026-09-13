@@ -17,6 +17,7 @@ const COLUMNS: { key: SortKey | "consensus"; label: string; align?: "right"; sor
   { key: "consensus", label: "Consensus", sortable: false, tip: GLOSSARY.consensus },
   { key: "momentum", label: "Momentum", align: "right", sortable: true, tip: GLOSSARY.momentum },
   { key: "targetMomentumPct", label: "Tgt Δ", align: "right", sortable: true, tip: GLOSSARY.targetMomentumPct },
+  { key: "confidenceScore", label: "Conf", align: "right", sortable: true, tip: GLOSSARY.confidence },
   { key: "score", label: "Score", align: "right", sortable: true, tip: GLOSSARY.score },
   { key: "valueScore", label: "Val", align: "right", sortable: true, tip: GLOSSARY.valueFactor },
   { key: "qualityScore", label: "Qual", align: "right", sortable: true, tip: GLOSSARY.qualityFactor },
@@ -112,6 +113,9 @@ export function ScreenerTable({ rows, onSelect }: { rows: ScreenerRow[]; onSelec
                 </td>
                 <td className={`px-3 py-2 text-right tabular ${(r.targetMomentumPct ?? 0) > 0 ? "text-good" : (r.targetMomentumPct ?? 0) < 0 ? "text-bad" : ""}`}>
                   {r.targetMomentumPct == null ? "—" : fmtPct(r.targetMomentumPct)}
+                </td>
+                <td className={`px-3 py-2 text-right tabular ${factorTone(r.confidenceScore)}`}>
+                  {r.confidenceScore == null ? "—" : fmtNum(r.confidenceScore, 0)}
                 </td>
                 <td className="px-3 py-2 text-right">
                   <div className="flex items-center justify-end gap-2">

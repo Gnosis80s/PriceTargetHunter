@@ -17,6 +17,7 @@ const COLUMNS: { key: keyof ScreenerRow; label: string }[] = [
   { key: "recommendationKey", label: "Consensus" },
   { key: "momentum", label: "Momentum" },
   { key: "targetMomentumPct", label: "Target Momentum %" },
+  { key: "confidenceScore", label: "Confidence" },
   { key: "score", label: "Score" },
   { key: "valueScore", label: "Value Score" },
   { key: "qualityScore", label: "Quality Score" },

@@ -17,6 +17,8 @@ falls back to a bundled offline dataset so the UI is never empty.
 
 > For research only. Not investment advice.
 
+![Price Target Hunter dashboard](docs/preview.png)
+
 ---
 
 ## Features
@@ -24,8 +26,10 @@ falls back to a bundled offline dataset so the UI is never empty.
 - **Screener** — sortable table with upside %, risk/reward, target dispersion,
   analyst coverage, consensus, price-target momentum, composite score,
   **value / quality / growth / health factor scores** and market cap.
-- **Signals** — target dispersion (agreement), price-target revision momentum,
-  and a consensus trend built from stored snapshots.
+- **Signals** — target dispersion (agreement), price-target revision momentum
+  with age decay, top-tier firm weighting, a **consensus confidence** score
+  (agreement × coverage × freshness × participation) and a consensus trend
+  built from stored snapshots.
 - **Fundamentals factor block** — value, quality, growth and health scores
   (0–100) computed from valuation, profitability, growth and balance-sheet
   metrics, folded into the composite score with configurable weights
@@ -154,14 +158,28 @@ falls back to Finnhub's `news-sentiment` endpoint otherwise.
 Upside %          = (targetMean − price) / price × 100
 Risk / reward     = (targetMean − price) / (price − targetLow)
 Dispersion %      = (targetHigh − targetLow) / targetMean × 100   (uncertainty)
-Target Δ %        = average % change of analyst price targets (90d)
+Target Δ %        = recency-weighted average analyst target change (90d)
 Momentum          = Σ price-target revisions (a 5% raise ≈ +1) ± grade changes (90d)
 ```
 
 Price-target revisions dominate momentum; grade-only changes fall back to ±1.
-Older than 90 days is ignored and a single revision is capped at ±3.
+Older than 90 days is ignored and a single revision is capped at ±3. Both
+momentum signals apply **age decay** (half-life 30 days), so a fresh upgrade
+counts more than a three-month-old one.
 
-Composite **score (0–100)** — a weighted blend of nine components, all
+**Consensus confidence (0–100)** rates how much the average target can be
+trusted — a high upside on a low-confidence name is a warning sign:
+
+```
+35%  agreement      (100 − dispersion × 0.8)
+30%  coverage       (analyst count / 20, capped)
+20%  freshness      (recency of the latest revision, 45-day half-life)
+15%  participation  (recency-weighted revision volume × top-tier firm share)
+```
+
+![Stock detail showing factor scores and the consensus confidence breakdown](docs/stock-detail.png)
+
+Composite **score (0–100)** — a weighted blend of eight components, all
 normalised to 0–100. Missing metrics are dropped and the remaining weights
 renormalised, so a gap never silently drags the score down:
 
@@ -169,9 +187,8 @@ renormalised, so a gap never silently drags the score down:
 target / analyst factors (default 70%)
   30%  upside score        (upside / 60%, capped)
   12%  consensus score     (Strong Buy 1 → Strong Sell 5)
-  12%  momentum score      (50 ± recent target revisions)
-   8%  coverage score      (analyst count / 20, capped)
-   8%  agreement score     (100 − dispersion × 0.8)
+  12%  momentum score      (50 ± recent, age-decayed target revisions)
+  16%  confidence score    (see above)
 
 fundamentals factors (default 30%)
   10%  value score         (P/E, P/B, P/S, EV/EBITDA, PEG, FCF yield, dividend yield)
@@ -180,16 +197,20 @@ fundamentals factors (default 30%)
    4%  health score        (debt/equity, current ratio, net-debt/EBITDA, interest cover, FCF)
 ```
 
-All nine weights are **configurable in Settings → Score weights** (relative,
+All eight weights are **configurable in Settings → Score weights** (relative,
 normalised by their sum). Fundamentals are sourced from Yahoo `financialData` /
 `defaultKeyStatistics`, Finnhub `stock/metric` and FMP `ratios-ttm` /
 `key-metrics-ttm` / `financial-growth`; whichever provider supplies a field
-wins, and absent fields simply drop out of that factor.
+wins, and absent fields simply drop out of that factor. Analyst actions are
+matched against a curated list of top-tier research desks for the participation
+component (a best-effort heuristic, since providers format firm names
+inconsistently).
 
-The screener surfaces `Disp` (dispersion), `Tgt Δ` (target momentum) and the
-four factor scores (`Val`, `Qual`, `Grw`, `Hlth`) — all sortable — plus a
-**Max dispersion** filter, and a **Consensus trend (30d)** in the detail view
-computed from locally stored snapshots. Providers are retried with exponential
+The screener surfaces `Disp` (dispersion), `Tgt Δ` (target momentum), `Conf`
+(consensus confidence) and the four factor scores (`Val`, `Qual`, `Grw`,
+`Hlth`) — all sortable — plus a **Max dispersion** filter, and a **Consensus
+trend (30d)** in the detail view computed from locally stored snapshots.
+Providers are retried with exponential
 backoff, and failed symbols can be inspected (with per-provider reasons) from
 the banner above the results.
 

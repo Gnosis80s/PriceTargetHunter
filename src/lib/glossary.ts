@@ -36,6 +36,21 @@ export const GLOSSARY = {
   consensusTrend:
     "How the average analyst target has moved recently, using snapshots this app has stored over time. Rising means targets are trending up — but it needs several scans before it appears.",
 
+  confidence:
+    "How much the consensus target can be trusted, from 0–100. It blends four things: how tightly analysts agree (low dispersion), how many cover the stock, how recently any analyst updated, and how much of that activity comes from top-tier research desks. A high upside with low confidence is a warning sign.",
+
+  confidenceAgreement:
+    "Confidence input: how tightly clustered the analyst targets are. Tight agreement scores high; a wide range scores low.",
+
+  confidenceCoverage:
+    "Confidence input: how many analysts cover the stock. A consensus built from 20+ analysts is far more reliable than one built from two.",
+
+  confidenceFreshness:
+    "Confidence input: how recently any analyst updated their target. Recent revisions score high; targets left untouched for months decay toward zero.",
+
+  confidenceParticipation:
+    "Confidence input: how actively the stock is being researched and whether the notes come from top-tier (bulge-bracket) desks. Fresh notes from major banks score highest.",
+
   score:
     "A 0–100 summary blending five things: upside (40%), consensus rating (18%), analyst momentum (18%), analyst coverage (12%) and target agreement (12%). It ranks ideas to investigate — it is not a buy signal or advice.",
 

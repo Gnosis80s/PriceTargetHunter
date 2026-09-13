@@ -20,14 +20,15 @@ export const DEFAULT_FILTERS: Filters = {
 /**
  * Target-centric by default, with a meaningful fundamentals block. The four
  * fundamental factors carry 30% combined; raise them for a more value/quality
- * driven screen. Weights are relative and normalised by their sum.
+ * driven screen. `confidence` replaces the old separate coverage/agreement
+ * weights and also folds in revision recency and top-tier firm participation.
+ * Weights are relative and normalised by their sum.
  */
 export const DEFAULT_SCORE_WEIGHTS: ScoreWeights = {
   upside: 30,
   consensus: 12,
   momentum: 12,
-  coverage: 8,
-  agreement: 8,
+  confidence: 16,
   value: 10,
   quality: 10,
   growth: 6,

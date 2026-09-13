@@ -1,11 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { StockData, TargetChange } from "./types";
 import {
+  ageWeight,
   band,
+  confidenceParts,
+  confidenceScore,
   dispersion,
+  freshnessScore,
   growthScore,
   healthScore,
+  isTopTierFirm,
   momentum,
+  participationScore,
   qualityScore,
   riskReward,
   score,
@@ -205,5 +211,74 @@ describe("fundamental factor scores", () => {
     const neutralFundamentals = score(stock(), 20, DEFAULT_SCORE_WEIGHTS);
     expect(noFundamentals).toBeGreaterThan(0);
     expect(neutralFundamentals).toBeGreaterThan(0);
+  });
+});
+
+describe("revision recency & tier-1 weighting", () => {
+  it("halves the weight of a revision every 30 days", () => {
+    expect(ageWeight(Date.now())).toBeCloseTo(1);
+    expect(ageWeight(Date.now() - 30 * DAY)).toBeCloseTo(0.5, 2);
+    expect(ageWeight(Date.now() - 60 * DAY)).toBeCloseTo(0.25, 2);
+  });
+
+  it("counts a fresh upgrade more than an old one", () => {
+    const fresh = momentum([change({ action: "up", date: Date.now() })]);
+    const old = momentum([change({ action: "up", date: Date.now() - 60 * DAY })]);
+    expect(fresh).toBeGreaterThan(old);
+    expect(old).toBeGreaterThan(0);
+  });
+
+  it("recognises top-tier research desks", () => {
+    expect(isTopTierFirm("Goldman Sachs")).toBe(true);
+    expect(isTopTierFirm("Morgan Stanley & Co.")).toBe(true);
+    expect(isTopTierFirm("Bob's Research Shack")).toBe(false);
+    expect(isTopTierFirm(undefined)).toBe(false);
+  });
+
+  it("scores fresh top-tier participation higher than stale unknown coverage", () => {
+    const active = participationScore([
+      change({ date: Date.now(), firm: "Morgan Stanley" }),
+      change({ date: Date.now() - 5 * DAY, firm: "Goldman Sachs" }),
+    ]);
+    const stale = participationScore([change({ date: Date.now() - 80 * DAY, firm: "No-name Research" })]);
+    expect(active!).toBeGreaterThan(stale!);
+  });
+
+  it("treats stale coverage as less fresh", () => {
+    const recent = freshnessScore([change({ date: Date.now() })]);
+    const older = freshnessScore([change({ date: Date.now() - 90 * DAY })]);
+    expect(recent!).toBeGreaterThan(older!);
+    expect(freshnessScore([])).toBeNull();
+  });
+});
+
+describe("confidenceScore", () => {
+  it("is higher with tight agreement, broad coverage and fresh top-tier notes", () => {
+    const strong = confidenceScore(
+      stock({
+        recommendationMean: 2,
+        analystCount: 25,
+        targetChanges: [
+          change({ date: Date.now(), firm: "Goldman Sachs" }),
+          change({ date: Date.now() - 4 * DAY, firm: "Morgan Stanley" }),
+        ],
+      }),
+      15,
+    );
+    const weak = confidenceScore(stock({ analystCount: 2, targetChanges: [] }), 150);
+    expect(strong!).toBeGreaterThan(weak!);
+  });
+
+  it("returns null when nothing is known about the consensus", () => {
+    const bare: StockData = { symbol: "X", source: "demo", fetchedAt: 0 };
+    expect(confidenceScore(bare, null)).toBeNull();
+  });
+
+  it("exposes the four contributing parts", () => {
+    const parts = confidenceParts(stock({ analystCount: 10 }), 20);
+    expect(parts.agreement).toBeCloseTo(100 - 20 * 0.8, 1);
+    expect(parts.coverage).toBeCloseTo(50, 1);
+    expect(parts.freshness).toBeNull();
+    expect(parts.participation).toBeNull();
   });
 });

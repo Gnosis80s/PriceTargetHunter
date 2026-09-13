@@ -5,7 +5,7 @@ import { fetchYahooChart, fetchYahooNews } from "../providers/yahoo";
 import { fetchSentiment, type NewsSentiment } from "../providers/sentiment";
 import { fetchStock } from "../providers";
 import type { StockData } from "../lib/types";
-import { toRow } from "../lib/scoring";
+import { toRow, confidenceParts } from "../lib/scoring";
 import { runningTargetAverage } from "../lib/history";
 import { useApp } from "../store/AppStore";
 import { Badge, Button, Dialog, InfoTip } from "./ui";
@@ -80,6 +80,11 @@ export function StockDetail({ symbol, onClose }: { symbol: string | null; onClos
   const row = useMemo(
     () => (stock ? toRow(stock, settings.scoreWeights) : null),
     [stock, settings.scoreWeights],
+  );
+
+  const conf = useMemo(
+    () => (stock ? confidenceParts(stock, row?.dispersion ?? null) : null),
+    [stock, row?.dispersion],
   );
 
   const series = useMemo<Series[]>(() => {
@@ -204,6 +209,20 @@ export function StockDetail({ symbol, onClose }: { symbol: string | null; onClos
                 tip={GLOSSARY.dispersion}
               />
               <Stat
+                label="Confidence"
+                value={row?.confidenceScore == null ? "—" : fmtNum(row.confidenceScore, 0)}
+                tone={
+                  row?.confidenceScore == null
+                    ? undefined
+                    : row.confidenceScore >= 65
+                      ? "good"
+                      : row.confidenceScore <= 35
+                        ? "bad"
+                        : undefined
+                }
+                tip={GLOSSARY.confidence}
+              />
+              <Stat
                 label="Target Δ (90d)"
                 value={row?.targetMomentumPct == null ? "—" : fmtPct(row.targetMomentumPct)}
                 tone={row?.targetMomentumPct != null ? (row.targetMomentumPct >= 0 ? "good" : "bad") : undefined}
@@ -262,6 +281,36 @@ export function StockDetail({ symbol, onClose }: { symbol: string | null; onClos
                     { label: "Quality", value: row.qualityScore, tip: GLOSSARY.qualityFactor },
                     { label: "Growth", value: row.growthScore, tip: GLOSSARY.growthFactor },
                     { label: "Health", value: row.healthScore, tip: GLOSSARY.healthFactor },
+                  ].map((f) => (
+                    <div key={f.label} className="rounded-lg border border-border bg-surface-2 px-3 py-2">
+                      <div className="flex items-center justify-between text-[11px] text-muted">
+                        <InfoTip tip={f.tip}>{f.label}</InfoTip>
+                        <span className="tabular font-semibold text-fg">{f.value == null ? "—" : fmtNum(f.value, 0)}</span>
+                      </div>
+                      <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-surface">
+                        <div
+                          className="h-full rounded-full bg-accent"
+                          style={{ width: `${f.value ?? 0}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {conf && [conf.agreement, conf.coverage, conf.freshness, conf.participation].some((v) => v != null) ? (
+              <div className="mt-5">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <div className="text-sm font-semibold">Consensus confidence</div>
+                  <span className="text-[11px] text-muted">How much to trust the average target</span>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {[
+                    { label: "Agreement", value: conf.agreement, tip: GLOSSARY.confidenceAgreement },
+                    { label: "Coverage", value: conf.coverage, tip: GLOSSARY.confidenceCoverage },
+                    { label: "Freshness", value: conf.freshness, tip: GLOSSARY.confidenceFreshness },
+                    { label: "Participation", value: conf.participation, tip: GLOSSARY.confidenceParticipation },
                   ].map((f) => (
                     <div key={f.label} className="rounded-lg border border-border bg-surface-2 px-3 py-2">
                       <div className="flex items-center justify-between text-[11px] text-muted">

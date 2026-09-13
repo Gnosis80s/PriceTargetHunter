@@ -14,6 +14,7 @@ export type SortKey =
   | "qualityScore"
   | "growthScore"
   | "healthScore"
+  | "confidenceScore"
   | "symbol";
 
 export function applyFilters(rows: ScreenerRow[], f: Filters): ScreenerRow[] {
