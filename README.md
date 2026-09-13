@@ -22,9 +22,16 @@ falls back to a bundled offline dataset so the UI is never empty.
 ## Features
 
 - **Screener** — sortable table with upside %, risk/reward, target dispersion,
-  analyst coverage, consensus, price-target momentum, composite score and market cap.
+  analyst coverage, consensus, price-target momentum, composite score,
+  **value / quality / growth / health factor scores** and market cap.
 - **Signals** — target dispersion (agreement), price-target revision momentum,
   and a consensus trend built from stored snapshots.
+- **Fundamentals factor block** — value, quality, growth and health scores
+  (0–100) computed from valuation, profitability, growth and balance-sheet
+  metrics, folded into the composite score with configurable weights
+  (Settings → Score weights) and shown per-metric in the stock detail view.
+- **Metric tooltips** — hover (or keyboard-focus) any financial metric for a
+  plain-language explanation, so non-experts can interpret the numbers.
 - **News sentiment** — per-article and aggregate bullish/bearish scores (Alpha
   Vantage, or Finnhub news-sentiment) shown in the stock detail view.
 - **Universe presets** — Curated (~70) or **S&P 500 (~503)**, plus paste your own
@@ -154,18 +161,34 @@ Momentum          = Σ price-target revisions (a 5% raise ≈ +1) ± grade chang
 Price-target revisions dominate momentum; grade-only changes fall back to ±1.
 Older than 90 days is ignored and a single revision is capped at ±3.
 
-Composite **score (0–100)** — tight analyst agreement is rewarded:
+Composite **score (0–100)** — a weighted blend of nine components, all
+normalised to 0–100. Missing metrics are dropped and the remaining weights
+renormalised, so a gap never silently drags the score down:
 
 ```
-40%  upside score        (upside / 60%, capped)
-18%  consensus score     (Strong Buy 1 → Strong Sell 5)
-18%  momentum score      (50 ± recent target revisions)
-12%  coverage score      (analyst count / 20, capped)
-12%  agreement score     (100 − dispersion × 0.8)
+target / analyst factors (default 70%)
+  30%  upside score        (upside / 60%, capped)
+  12%  consensus score     (Strong Buy 1 → Strong Sell 5)
+  12%  momentum score      (50 ± recent target revisions)
+   8%  coverage score      (analyst count / 20, capped)
+   8%  agreement score     (100 − dispersion × 0.8)
+
+fundamentals factors (default 30%)
+  10%  value score         (P/E, P/B, P/S, EV/EBITDA, PEG, FCF yield, dividend yield)
+  10%  quality score       (ROE, ROA, gross / operating / net margin)
+   6%  growth score        (revenue, earnings and EPS growth)
+   4%  health score        (debt/equity, current ratio, net-debt/EBITDA, interest cover, FCF)
 ```
 
-The screener surfaces `Disp` (dispersion) and `Tgt Δ` (target momentum) columns,
-a **Max dispersion** filter, and a **Consensus trend (30d)** in the detail view
+All nine weights are **configurable in Settings → Score weights** (relative,
+normalised by their sum). Fundamentals are sourced from Yahoo `financialData` /
+`defaultKeyStatistics`, Finnhub `stock/metric` and FMP `ratios-ttm` /
+`key-metrics-ttm` / `financial-growth`; whichever provider supplies a field
+wins, and absent fields simply drop out of that factor.
+
+The screener surfaces `Disp` (dispersion), `Tgt Δ` (target momentum) and the
+four factor scores (`Val`, `Qual`, `Grw`, `Hlth`) — all sortable — plus a
+**Max dispersion** filter, and a **Consensus trend (30d)** in the detail view
 computed from locally stored snapshots. Providers are retried with exponential
 backoff, and failed symbols can be inspected (with per-provider reasons) from
 the banner above the results.
@@ -208,9 +231,10 @@ price-target-hunter/
    │  ├─ finnhub.ts            # Finnhub adapter
    │  └─ sentiment.ts          # news sentiment (Alpha Vantage / Finnhub)
    ├─ lib/
-   │  ├─ types.ts              # StockData, ScreenerRow, Filters, Settings…
-   │  ├─ scoring.ts            # upside / risk-reward / momentum / score
-   │  ├─ history.ts            # target-history series from analyst actions
+    │  ├─ types.ts              # StockData, ScreenerRow, Filters, Settings…
+    │  ├─ scoring.ts            # upside / risk-reward / momentum / factors / score
+    │  ├─ glossary.ts           # plain-language metric explanations (tooltips)
+    │  ├─ history.ts            # target-history series from analyst actions
    │  ├─ screener.ts           # applyFilters + sortRows
    │  ├─ cache.ts              # localStorage TTL cache
    │  ├─ concurrency.ts        # mapLimit + RateLimiter

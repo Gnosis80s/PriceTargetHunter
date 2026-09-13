@@ -1,9 +1,23 @@
 import { useEffect, useState } from "react";
 import { useApp } from "../store/AppStore";
 import { DEFAULT_SETTINGS } from "../lib/defaults";
+import type { ScoreWeights } from "../lib/types";
+import { GLOSSARY } from "../lib/glossary";
 import { UNIVERSE_PRESETS } from "../data/presets";
 import { Button, Card, CardHeader, Field, Input, Select, Switch } from "./ui";
 import { ensureNotificationPermission } from "../hooks/useScreener";
+
+const WEIGHT_FIELDS: { key: keyof ScoreWeights; label: string; tip: string }[] = [
+  { key: "upside", label: "Upside", tip: GLOSSARY.upside },
+  { key: "consensus", label: "Consensus", tip: GLOSSARY.consensus },
+  { key: "momentum", label: "Momentum", tip: GLOSSARY.momentum },
+  { key: "coverage", label: "Coverage", tip: GLOSSARY.analysts },
+  { key: "agreement", label: "Agreement", tip: GLOSSARY.dispersion },
+  { key: "value", label: "Value", tip: GLOSSARY.valueFactor },
+  { key: "quality", label: "Quality", tip: GLOSSARY.qualityFactor },
+  { key: "growth", label: "Growth", tip: GLOSSARY.growthFactor },
+  { key: "health", label: "Health", tip: GLOSSARY.healthFactor },
+];
 
 export function SettingsPanel() {
   const { settings, updateSettings, resetSettings } = useApp();
@@ -68,6 +82,43 @@ export function SettingsPanel() {
                 onChange={(e) => updateSettings({ concurrency: Number(e.target.value) || 5 })}
               />
             </Field>
+          </div>
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader title="Score weights" subtitle="Relative weight of each factor in the 0–100 score" />
+        <div className="flex flex-col gap-3 p-4">
+          <div className="grid grid-cols-3 gap-3">
+            {WEIGHT_FIELDS.map((f) => (
+              <Field key={f.key} label={f.label} tip={f.tip}>
+                <Input
+                  type="number"
+                  min={0}
+                  value={settings.scoreWeights[f.key]}
+                  onChange={(e) =>
+                    updateSettings({
+                      scoreWeights: {
+                        ...settings.scoreWeights,
+                        [f.key]: Math.max(0, Number(e.target.value) || 0),
+                      },
+                    })
+                  }
+                />
+              </Field>
+            ))}
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-[11px] text-muted">
+              Weights are relative — they are normalised by their sum, so they need not add to 100.
+            </p>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => updateSettings({ scoreWeights: DEFAULT_SETTINGS.scoreWeights })}
+            >
+              Reset weights
+            </Button>
           </div>
         </div>
       </Card>

@@ -1,24 +1,36 @@
 import { useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, Eye, Star } from "lucide-react";
 import type { ScreenerRow } from "../lib/types";
-import { Badge, Button } from "./ui";
+import { Badge, Button, InfoTip } from "./ui";
 import { fmtCompact, fmtMoney, fmtNum, fmtPct, recLabel } from "../lib/utils";
 import { sortRows, type SortKey } from "../lib/screener";
 import { useApp } from "../store/AppStore";
+import { GLOSSARY } from "../lib/glossary";
 
-const COLUMNS: { key: SortKey | "consensus"; label: string; align?: "right"; sortable: boolean; title?: string }[] = [
+const COLUMNS: { key: SortKey | "consensus"; label: string; align?: "right"; sortable: boolean; tip?: string }[] = [
   { key: "symbol", label: "Symbol", sortable: true },
-  { key: "price", label: "Price", align: "right", sortable: false },
-  { key: "upsidePct", label: "Upside", align: "right", sortable: true },
-  { key: "riskReward", label: "R/R", align: "right", sortable: true },
-  { key: "dispersion", label: "Disp", align: "right", sortable: true, title: "Target-range width vs mean — lower = tighter agreement" },
-  { key: "analystCount", label: "Analysts", align: "right", sortable: true },
-  { key: "consensus", label: "Consensus", sortable: false },
-  { key: "momentum", label: "Momentum", align: "right", sortable: true },
-  { key: "targetMomentumPct", label: "Tgt Δ", align: "right", sortable: true, title: "Average analyst price-target change (90d)" },
-  { key: "score", label: "Score", align: "right", sortable: true },
-  { key: "marketCap", label: "Mkt Cap", align: "right", sortable: true },
+  { key: "price", label: "Price", align: "right", sortable: false, tip: GLOSSARY.price },
+  { key: "upsidePct", label: "Upside", align: "right", sortable: true, tip: GLOSSARY.upside },
+  { key: "riskReward", label: "R/R", align: "right", sortable: true, tip: GLOSSARY.riskReward },
+  { key: "dispersion", label: "Disp", align: "right", sortable: true, tip: GLOSSARY.dispersion },
+  { key: "analystCount", label: "Analysts", align: "right", sortable: true, tip: GLOSSARY.analysts },
+  { key: "consensus", label: "Consensus", sortable: false, tip: GLOSSARY.consensus },
+  { key: "momentum", label: "Momentum", align: "right", sortable: true, tip: GLOSSARY.momentum },
+  { key: "targetMomentumPct", label: "Tgt Δ", align: "right", sortable: true, tip: GLOSSARY.targetMomentumPct },
+  { key: "score", label: "Score", align: "right", sortable: true, tip: GLOSSARY.score },
+  { key: "valueScore", label: "Val", align: "right", sortable: true, tip: GLOSSARY.valueFactor },
+  { key: "qualityScore", label: "Qual", align: "right", sortable: true, tip: GLOSSARY.qualityFactor },
+  { key: "growthScore", label: "Grw", align: "right", sortable: true, tip: GLOSSARY.growthFactor },
+  { key: "healthScore", label: "Hlth", align: "right", sortable: true, tip: GLOSSARY.healthFactor },
+  { key: "marketCap", label: "Mkt Cap", align: "right", sortable: true, tip: GLOSSARY.marketCap },
 ];
+
+function factorTone(v: number | null): string {
+  if (v == null) return "text-muted";
+  if (v >= 65) return "text-good";
+  if (v <= 35) return "text-bad";
+  return "";
+}
 
 export function ScreenerTable({ rows, onSelect }: { rows: ScreenerRow[]; onSelect: (symbol: string) => void }) {
   const { isWatched, addWatch, removeWatch } = useApp();
@@ -43,14 +55,13 @@ export function ScreenerTable({ rows, onSelect }: { rows: ScreenerRow[]; onSelec
             {COLUMNS.map((c) => (
               <th
                 key={c.key}
-                title={c.title}
                 className={`whitespace-nowrap px-3 py-2 font-medium ${c.align === "right" ? "text-right" : ""} ${
                   c.sortable ? "cursor-pointer select-none hover:text-fg" : ""
                 }`}
                 onClick={() => c.sortable && toggleSort(c.key as SortKey)}
               >
                 <span className="inline-flex items-center gap-1">
-                  {c.label}
+                  {c.tip ? <InfoTip tip={c.tip}>{c.label}</InfoTip> : c.label}
                   {sortKey === c.key ? (
                     dir === "desc" ? (
                       <ArrowDown size={11} />
@@ -109,6 +120,18 @@ export function ScreenerTable({ rows, onSelect }: { rows: ScreenerRow[]; onSelec
                     </div>
                     <span className="tabular">{fmtNum(r.score, 0)}</span>
                   </div>
+                </td>
+                <td className={`px-3 py-2 text-right tabular ${factorTone(r.valueScore)}`}>
+                  {r.valueScore == null ? "—" : fmtNum(r.valueScore, 0)}
+                </td>
+                <td className={`px-3 py-2 text-right tabular ${factorTone(r.qualityScore)}`}>
+                  {r.qualityScore == null ? "—" : fmtNum(r.qualityScore, 0)}
+                </td>
+                <td className={`px-3 py-2 text-right tabular ${factorTone(r.growthScore)}`}>
+                  {r.growthScore == null ? "—" : fmtNum(r.growthScore, 0)}
+                </td>
+                <td className={`px-3 py-2 text-right tabular ${factorTone(r.healthScore)}`}>
+                  {r.healthScore == null ? "—" : fmtNum(r.healthScore, 0)}
                 </td>
                 <td className="px-3 py-2 text-right tabular">{r.marketCap ? `$${fmtCompact(r.marketCap)}` : "—"}</td>
                 <td className="px-3 py-2">

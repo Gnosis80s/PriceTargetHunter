@@ -8,20 +8,25 @@ import type { StockData } from "../lib/types";
 import { toRow } from "../lib/scoring";
 import { runningTargetAverage } from "../lib/history";
 import { useApp } from "../store/AppStore";
-import { Badge, Button, Dialog } from "./ui";
+import { Badge, Button, Dialog, InfoTip } from "./ui";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { MultiLineChart, type Series } from "./LineChart";
 import { fmtCompact, fmtMoney, fmtNum, fmtPct, recLabel, timeAgo } from "../lib/utils";
+import { GLOSSARY } from "../lib/glossary";
 
-function Stat({ label, value, tone }: { label: string; value: string; tone?: "good" | "bad" }) {
+function Stat({ label, value, tone, tip }: { label: string; value: string; tone?: "good" | "bad"; tip?: string }) {
   return (
     <div className="rounded-lg border border-border bg-surface-2 px-3 py-2">
-      <div className="text-[11px] text-muted">{label}</div>
+      <div className="text-[11px] text-muted">{tip ? <InfoTip tip={tip}>{label}</InfoTip> : label}</div>
       <div className={`mt-0.5 text-sm font-semibold tabular ${tone === "good" ? "text-good" : tone === "bad" ? "text-bad" : ""}`}>
         {value}
       </div>
     </div>
   );
+}
+
+function pct1(v?: number): string {
+  return v == null ? "—" : `${(v * 100).toFixed(1)}%`;
 }
 
 export function StockDetail({ symbol, onClose }: { symbol: string | null; onClose: () => void }) {
@@ -72,7 +77,10 @@ export function StockDetail({ symbol, onClose }: { symbol: string | null; onClos
     };
   }, [symbol, settings, reloadKey]);
 
-  const row = useMemo(() => (stock ? toRow(stock) : null), [stock]);
+  const row = useMemo(
+    () => (stock ? toRow(stock, settings.scoreWeights) : null),
+    [stock, settings.scoreWeights],
+  );
 
   const series = useMemo<Series[]>(() => {
     const out: Series[] = [];
@@ -180,38 +188,43 @@ export function StockDetail({ symbol, onClose }: { symbol: string | null; onClos
         {stock ? (
           <>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <Stat label="Price" value={fmtMoney(stock.price, stock.currency)} />
-              <Stat label="Avg target" value={fmtMoney(stock.targetMean, stock.currency)} />
+              <Stat label="Price" value={fmtMoney(stock.price, stock.currency)} tip={GLOSSARY.price} />
+              <Stat label="Avg target" value={fmtMoney(stock.targetMean, stock.currency)} tip={GLOSSARY.avgTarget} />
               <Stat
                 label="Upside"
                 value={fmtPct(row?.upsidePct)}
                 tone={(row?.upsidePct ?? 0) >= 0 ? "good" : "bad"}
+                tip={GLOSSARY.upside}
               />
-              <Stat label="Risk / reward" value={fmtNum(row?.riskReward, 2)} />
+              <Stat label="Risk / reward" value={fmtNum(row?.riskReward, 2)} tip={GLOSSARY.riskReward} />
               <Stat
                 label="Dispersion"
                 value={row?.dispersion == null ? "—" : `${fmtNum(row.dispersion, 0)}%`}
                 tone={row?.dispersion != null && row.dispersion <= 40 ? "good" : undefined}
+                tip={GLOSSARY.dispersion}
               />
               <Stat
                 label="Target Δ (90d)"
                 value={row?.targetMomentumPct == null ? "—" : fmtPct(row.targetMomentumPct)}
                 tone={row?.targetMomentumPct != null ? (row.targetMomentumPct >= 0 ? "good" : "bad") : undefined}
+                tip={GLOSSARY.targetMomentumPct}
               />
               <Stat
                 label={consensusTrend ? `Consensus (${consensusTrend.days}d)` : "Consensus trend"}
                 value={consensusTrend ? fmtPct(consensusTrend.pct) : "—"}
                 tone={consensusTrend ? (consensusTrend.pct >= 0 ? "good" : "bad") : undefined}
+                tip={GLOSSARY.consensusTrend}
               />
               <Stat
                 label="News sentiment"
                 value={sentiment ? `${sentiment.label} (${fmtNum(sentiment.score, 2)})` : "—"}
                 tone={sentiment ? (sentiment.score >= 0.15 ? "good" : sentiment.score <= -0.15 ? "bad" : undefined) : undefined}
+                tip={GLOSSARY.newsSentiment}
               />
-              <Stat label="Analysts" value={stock.analystCount ? String(stock.analystCount) : "—"} />
-              <Stat label="Consensus" value={recLabel(stock.recommendationKey, stock.recommendationMean)} />
-              <Stat label="Low / High target" value={`${fmtMoney(stock.targetLow)} – ${fmtMoney(stock.targetHigh)}`} />
-              <Stat label="Market cap" value={stock.marketCap ? `$${fmtCompact(stock.marketCap)}` : "—"} />
+              <Stat label="Analysts" value={stock.analystCount ? String(stock.analystCount) : "—"} tip={GLOSSARY.analysts} />
+              <Stat label="Consensus" value={recLabel(stock.recommendationKey, stock.recommendationMean)} tip={GLOSSARY.consensus} />
+              <Stat label="Low / High target" value={`${fmtMoney(stock.targetLow)} – ${fmtMoney(stock.targetHigh)}`} tip={GLOSSARY.targetLowHigh} />
+              <Stat label="Market cap" value={stock.marketCap ? `$${fmtCompact(stock.marketCap)}` : "—"} tip={GLOSSARY.marketCap} />
             </div>
 
             {ratings.some((r) => r.value > 0) ? (
@@ -232,6 +245,36 @@ export function StockDetail({ symbol, onClose }: { symbol: string | null; onClos
                     <span key={r.label}>
                       {r.label}: <span className="text-fg">{r.value}</span> ({r.pct.toFixed(0)}%)
                     </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {row && [row.valueScore, row.qualityScore, row.growthScore, row.healthScore].some((v) => v != null) ? (
+              <div className="mt-5">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <div className="text-sm font-semibold">Fundamental factor scores</div>
+                  <span className="text-[11px] text-muted">0–100 · blended into Score by your weights</span>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {[
+                    { label: "Value", value: row.valueScore, tip: GLOSSARY.valueFactor },
+                    { label: "Quality", value: row.qualityScore, tip: GLOSSARY.qualityFactor },
+                    { label: "Growth", value: row.growthScore, tip: GLOSSARY.growthFactor },
+                    { label: "Health", value: row.healthScore, tip: GLOSSARY.healthFactor },
+                  ].map((f) => (
+                    <div key={f.label} className="rounded-lg border border-border bg-surface-2 px-3 py-2">
+                      <div className="flex items-center justify-between text-[11px] text-muted">
+                        <InfoTip tip={f.tip}>{f.label}</InfoTip>
+                        <span className="tabular font-semibold text-fg">{f.value == null ? "—" : fmtNum(f.value, 0)}</span>
+                      </div>
+                      <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-surface">
+                        <div
+                          className="h-full rounded-full bg-accent"
+                          style={{ width: `${f.value ?? 0}%` }}
+                        />
+                      </div>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -281,21 +324,42 @@ export function StockDetail({ symbol, onClose }: { symbol: string | null; onClos
             </div>
 
             <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <Stat label="Trailing P/E" value={fmtNum(stock.trailingPE)} />
-              <Stat label="Forward P/E" value={fmtNum(stock.forwardPE)} />
-              <Stat label="EPS" value={fmtNum(stock.eps)} />
+              <Stat label="Trailing P/E" value={fmtNum(stock.trailingPE)} tip={GLOSSARY.trailingPE} />
+              <Stat label="Forward P/E" value={fmtNum(stock.forwardPE)} tip={GLOSSARY.forwardPE} />
+              <Stat label="Price / book" value={fmtNum(stock.priceToBook)} tip={GLOSSARY.priceToBook} />
+              <Stat label="Price / sales" value={fmtNum(stock.priceToSales)} tip={GLOSSARY.priceToSales} />
+              <Stat label="PEG ratio" value={fmtNum(stock.pegRatio)} tip={GLOSSARY.pegRatio} />
+              <Stat label="EV / EBITDA" value={fmtNum(stock.enterpriseToEbitda)} tip={GLOSSARY.evEbitda} />
+              <Stat
+                label="FCF yield"
+                value={stock.fcfYield != null ? pct1(stock.fcfYield) : "—"}
+                tip={GLOSSARY.fcfYield}
+              />
+              <Stat label="EPS" value={fmtNum(stock.eps)} tip={GLOSSARY.eps} />
               <Stat
                 label="Earnings growth"
-                value={stock.earningsGrowth != null ? `${(stock.earningsGrowth * 100).toFixed(1)}%` : "—"}
+                value={pct1(stock.earningsGrowth)}
                 tone={(stock.earningsGrowth ?? 0) >= 0 ? "good" : "bad"}
+                tip={GLOSSARY.earningsGrowth}
               />
+              <Stat label="Revenue growth" value={pct1(stock.revenueGrowth)} tip={GLOSSARY.revenueGrowth} />
+              <Stat label="Return on equity" value={pct1(stock.returnOnEquity)} tip={GLOSSARY.returnOnEquity} />
+              <Stat label="Return on assets" value={pct1(stock.returnOnAssets)} tip={GLOSSARY.returnOnAssets} />
+              <Stat label="Gross margin" value={pct1(stock.grossMargin)} tip={GLOSSARY.grossMargin} />
+              <Stat label="Operating margin" value={pct1(stock.operatingMargin)} tip={GLOSSARY.operatingMargin} />
+              <Stat label="Net margin" value={pct1(stock.netMargin)} tip={GLOSSARY.netMargin} />
+              <Stat label="Debt / equity" value={fmtNum(stock.debtToEquity)} tip={GLOSSARY.debtToEquity} />
+              <Stat label="Current ratio" value={fmtNum(stock.currentRatio)} tip={GLOSSARY.currentRatio} />
               <Stat
-                label="Revenue growth"
-                value={stock.revenueGrowth != null ? `${(stock.revenueGrowth * 100).toFixed(1)}%` : "—"}
+                label="Net debt / EBITDA"
+                value={fmtNum(stock.netDebtToEbitda)}
+                tip={GLOSSARY.netDebtToEbitda}
               />
-              <Stat label="Volume" value={fmtCompact(stock.volume)} />
-              <Stat label="Avg volume" value={fmtCompact(stock.avgVolume)} />
-              <Stat label="Industry" value={stock.industry ?? "—"} />
+              <Stat label="Interest cover" value={fmtNum(stock.interestCoverage)} tip={GLOSSARY.interestCoverage} />
+              <Stat label="Free cash flow" value={fmtCompact(stock.freeCashFlow)} tip={GLOSSARY.freeCashFlow} />
+              <Stat label="Volume" value={fmtCompact(stock.volume)} tip={GLOSSARY.volume} />
+              <Stat label="Avg volume" value={fmtCompact(stock.avgVolume)} tip={GLOSSARY.avgVolume} />
+              <Stat label="Industry" value={stock.industry ?? "—"} tip={GLOSSARY.industry} />
             </div>
 
             <div className="mt-5 grid gap-5 lg:grid-cols-2">

@@ -78,6 +78,9 @@ export async function fetchYahoo(symbol: string): Promise<StockData> {
 
   const current = num(fin?.currentPrice) ?? num(price?.regularMarketPrice) ?? num(detail?.regularMarketPrice);
   const previousClose = num(price?.regularMarketPreviousClose) ?? num(detail?.previousClose);
+  // Yahoo is inconsistent here: yields can arrive as 0.02 (2%) or 2.0 (2%).
+  const rawYield = num(detail?.dividendYield);
+  const dividendYield = rawYield == null ? undefined : rawYield > 1 ? rawYield / 100 : rawYield;
   let changePct: number | undefined;
   if (current != null && previousClose) changePct = ((current - previousClose) / previousClose) * 100;
   else if (num(price?.regularMarketChangePercent) != null) changePct = num(price?.regularMarketChangePercent)! * 100;
@@ -123,6 +126,24 @@ export async function fetchYahoo(symbol: string): Promise<StockData> {
     eps: num(stats?.trailingEps),
     earningsGrowth: num(fin?.earningsGrowth),
     revenueGrowth: num(fin?.revenueGrowth),
+
+    priceToBook: num(stats?.priceToBook),
+    priceToSales: num(detail?.priceToSalesTrailing12Months),
+    enterpriseToEbitda: num(stats?.enterpriseToEbitda),
+    pegRatio: num(stats?.pegRatio) ?? num(stats?.trailingPegRatio),
+    dividendYield,
+    returnOnEquity: num(fin?.returnOnEquity),
+    returnOnAssets: num(fin?.returnOnAssets),
+    grossMargin: num(fin?.grossMargins),
+    operatingMargin: num(fin?.operatingMargins),
+    netMargin: num(fin?.profitMargins),
+    freeCashFlow: num(fin?.freeCashflow),
+    operatingCashFlow: num(fin?.operatingCashflow),
+    // Yahoo reports debt/equity as a percentage (e.g. 154.3 = 1.54x).
+    debtToEquity: num(fin?.debtToEquity) != null ? num(fin?.debtToEquity)! / 100 : undefined,
+    currentRatio: num(fin?.currentRatio),
+    epsGrowth: num(stats?.earningsQuarterlyGrowth),
+
     targetChanges: mapGradeHistory(pick(r, "upgradeDowngradeHistory.history")),
     source: "yahoo",
     fetchedAt: Date.now(),

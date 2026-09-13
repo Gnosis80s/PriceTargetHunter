@@ -1,3 +1,5 @@
+import { useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from "react";
 import { cn } from "../lib/utils";
 
@@ -78,10 +80,71 @@ export function Select({ className, children, ...props }: SelectHTMLAttributes<H
   );
 }
 
-export function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+/**
+ * Hover/focus tooltip for explaining financial metrics in plain language.
+ * Renders in a portal so it is never clipped by scrollable tables or dialogs.
+ */
+export function InfoTip({
+  children,
+  tip,
+  wide,
+}: {
+  children: ReactNode;
+  tip: ReactNode;
+  wide?: boolean;
+}) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+
+  const show = () => {
+    const el = ref.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setPos({ x: r.left + r.width / 2, y: r.top });
+  };
+
+  return (
+    <>
+      <span
+        ref={ref}
+        tabIndex={0}
+        aria-label="More information"
+        onMouseEnter={show}
+        onMouseLeave={() => setPos(null)}
+        onFocus={show}
+        onBlur={() => setPos(null)}
+        onClick={(e) => e.stopPropagation()}
+        className="inline-flex cursor-help items-center border-b border-dotted border-muted outline-none"
+      >
+        {children}
+      </span>
+      {pos
+        ? createPortal(
+            <span
+              role="tooltip"
+              style={{ left: pos.x, top: pos.y }}
+              className={cn(
+                "pointer-events-none fixed z-[100] block -translate-x-1/2 -translate-y-full pb-2",
+                wide ? "w-80" : "w-64",
+              )}
+            >
+              <span className="block rounded-lg border border-border bg-surface px-3 py-2 text-left text-[11px] font-normal normal-case leading-snug text-fg shadow-2xl">
+                {tip}
+              </span>
+            </span>,
+            document.body,
+          )
+        : null}
+    </>
+  );
+}
+
+export function Field({ label, hint, tip, children }: { label: string; hint?: string; tip?: string; children: ReactNode }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-xs font-medium text-muted">{label}</span>
+      <span className="text-xs font-medium text-muted">
+        {tip ? <InfoTip tip={tip}>{label}</InfoTip> : label}
+      </span>
       {children}
       {hint ? <span className="text-[11px] text-muted">{hint}</span> : null}
     </label>

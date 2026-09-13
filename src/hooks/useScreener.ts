@@ -96,10 +96,10 @@ export function useScreener() {
           {
             bypassCache,
             signal: abortRef.current.signal,
-            onRow: (stock) => setAllRows((prev) => [...prev, toRow(stock)]),
+            onRow: (stock) => setAllRows((prev) => [...prev, toRow(stock, settings.scoreWeights)]),
           },
         );
-        const mapped = res.rows.map(toRow);
+        const mapped = res.rows.map((r) => toRow(r, settings.scoreWeights));
         setAllRows(mapped);
         setErrors(res.errors);
         setLastUpdated(Date.now());

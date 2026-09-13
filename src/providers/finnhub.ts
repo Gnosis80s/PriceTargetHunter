@@ -8,6 +8,12 @@ function num(v: unknown): number | undefined {
   return typeof n === "number" && Number.isFinite(n) && n !== 0 ? n : undefined;
 }
 
+/** Finnhub reports most ratios as percentages (e.g. 15.2 = 15.2%). */
+function pct(v: unknown): number | undefined {
+  const n = num(v);
+  return n == null ? undefined : n / 100;
+}
+
 async function get(path: string, apiKey: string): Promise<any> {
   const res = await fetch(`${BASE}${path}${path.includes("?") ? "&" : "?"}token=${encodeURIComponent(apiKey)}`);
   if (!res.ok) throw new Error(`finnhub ${res.status}`);
@@ -46,6 +52,8 @@ export async function fetchFinnhub(symbol: string, apiKey: string): Promise<Stoc
     .slice(0, 60);
 
   const m = metrics?.metric ?? {};
+  const netDebt = num(m.netDebt);
+  const ebitdaTtm = num(m.ebitdaTTM);
   return {
     symbol,
     name: profile?.name ?? undefined,
@@ -72,6 +80,24 @@ export async function fetchFinnhub(symbol: string, apiKey: string): Promise<Stoc
     eps: num(m.epsTTM) ?? num(m.epsBasicExclExtraItemsTTM),
     earningsGrowth: num(m.epsGrowthTTMYoy) != null ? num(m.epsGrowthTTMYoy)! / 100 : undefined,
     revenueGrowth: num(m.revenueGrowthTTMYoy) != null ? num(m.revenueGrowthTTMYoy)! / 100 : undefined,
+
+    priceToBook: num(m.pb) ?? num(m.pbQuarterly),
+    priceToSales: num(m.psTTM) ?? num(m.psAnnual),
+    enterpriseToEbitda: num(m.evEbitdaTTM),
+    pegRatio: num(m.pegTTM) ?? num(m.pegAnnual),
+    dividendYield: pct(m.dividendYieldIndicatedAnnual),
+    returnOnEquity: pct(m.roeTTM),
+    returnOnAssets: pct(m.roaTTM),
+    grossMargin: pct(m.grossMarginTTM),
+    operatingMargin: pct(m.operatingMarginTTM),
+    netMargin: pct(m.netProfitMarginTTM),
+    freeCashFlow: num(m.freeCashFlowTTM) ?? num(m.freeCashFlowAnnual),
+    debtToEquity: pct(m["totalDebt/totalEquityQuarterly"] ?? m["totalDebt/totalEquityAnnual"]),
+    currentRatio: num(m.currentRatioQuarterly) ?? num(m.currentRatioAnnual),
+    netDebtToEbitda: netDebt != null && ebitdaTtm != null && ebitdaTtm > 0 ? netDebt / ebitdaTtm : undefined,
+    interestCoverage: num(m.netInterestCoverageTTM) ?? num(m.interestCoverageTTM),
+    epsGrowth: pct(m.epsGrowth5Y) ?? pct(m.epsGrowth3Y),
+
     targetChanges: changes,
     source: "finnhub",
     fetchedAt: Date.now(),

@@ -1,5 +1,6 @@
 import type { Filters } from "../lib/types";
 import { Button, Field, Input, Select, Switch } from "./ui";
+import { GLOSSARY } from "../lib/glossary";
 
 export function FiltersPanel({
   filters,
@@ -24,14 +25,14 @@ export function FiltersPanel({
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Min upside %">
+        <Field label="Min upside %" tip={GLOSSARY.upside}>
           <Input
             type="number"
             value={filters.minUpside}
             onChange={(e) => onChange({ minUpside: num(e.target.value, 0) })}
           />
         </Field>
-        <Field label="Min risk/reward">
+        <Field label="Min risk/reward" tip={GLOSSARY.riskReward}>
           <Input
             type="number"
             step="0.1"
@@ -39,49 +40,49 @@ export function FiltersPanel({
             onChange={(e) => onChange({ minRiskReward: num(e.target.value, 0) })}
           />
         </Field>
-        <Field label="Max dispersion %" hint="Tighter target ranges only (1000 = any)">
+        <Field label="Max dispersion %" hint="Tighter target ranges only (1000 = any)" tip={GLOSSARY.dispersion}>
           <Input
             type="number"
             value={filters.maxDispersion}
             onChange={(e) => onChange({ maxDispersion: num(e.target.value, 1000) })}
           />
         </Field>
-        <Field label="Min analysts">
+        <Field label="Min analysts" tip={GLOSSARY.analysts}>
           <Input
             type="number"
             value={filters.minAnalysts}
             onChange={(e) => onChange({ minAnalysts: num(e.target.value, 0) })}
           />
         </Field>
-        <Field label="Max analysts">
+        <Field label="Max analysts" tip={GLOSSARY.analysts}>
           <Input
             type="number"
             value={filters.maxAnalysts}
             onChange={(e) => onChange({ maxAnalysts: num(e.target.value, 999) })}
           />
         </Field>
-        <Field label="Min market cap ($B)">
+        <Field label="Min market cap ($B)" tip={GLOSSARY.marketCap}>
           <Input
             type="number"
             value={filters.minMarketCapB}
             onChange={(e) => onChange({ minMarketCapB: num(e.target.value, 0) })}
           />
         </Field>
-        <Field label="Max market cap ($B)">
+        <Field label="Max market cap ($B)" tip={GLOSSARY.marketCap}>
           <Input
             type="number"
             value={filters.maxMarketCapB}
             onChange={(e) => onChange({ maxMarketCapB: num(e.target.value, 1_000_000) })}
           />
         </Field>
-        <Field label="Min price">
+        <Field label="Min price" tip={GLOSSARY.price}>
           <Input
             type="number"
             value={filters.minPrice}
             onChange={(e) => onChange({ minPrice: num(e.target.value, 0) })}
           />
         </Field>
-        <Field label="Max price">
+        <Field label="Max price" tip={GLOSSARY.price}>
           <Input
             type="number"
             value={filters.maxPrice}
@@ -90,7 +91,7 @@ export function FiltersPanel({
         </Field>
       </div>
 
-      <Field label="Consensus at least">
+      <Field label="Consensus at least" tip={GLOSSARY.consensus}>
         <Select
           value={filters.minRecommendation}
           onChange={(e) => onChange({ minRecommendation: Number(e.target.value) })}

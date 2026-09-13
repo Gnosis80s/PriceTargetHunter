@@ -10,6 +10,10 @@ export type SortKey =
   | "marketCap"
   | "momentum"
   | "price"
+  | "valueScore"
+  | "qualityScore"
+  | "growthScore"
+  | "healthScore"
   | "symbol";
 
 export function applyFilters(rows: ScreenerRow[], f: Filters): ScreenerRow[] {

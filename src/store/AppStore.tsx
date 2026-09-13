@@ -32,6 +32,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ...DEFAULT_SETTINGS,
       ...rawSettings,
       filters: { ...DEFAULT_SETTINGS.filters, ...(rawSettings?.filters ?? {}) },
+      scoreWeights: { ...DEFAULT_SETTINGS.scoreWeights, ...(rawSettings?.scoreWeights ?? {}) },
       universe: rawSettings?.universe?.length ? rawSettings.universe : DEFAULT_SETTINGS.universe,
       universePreset: rawSettings?.universePreset ?? DEFAULT_SETTINGS.universePreset,
     };

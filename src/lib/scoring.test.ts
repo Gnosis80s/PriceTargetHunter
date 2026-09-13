@@ -1,6 +1,20 @@
 import { describe, expect, it } from "vitest";
 import type { StockData, TargetChange } from "./types";
-import { dispersion, momentum, riskReward, score, targetMomentumPct, toRow, upsidePct } from "./scoring";
+import {
+  band,
+  dispersion,
+  growthScore,
+  healthScore,
+  momentum,
+  qualityScore,
+  riskReward,
+  score,
+  targetMomentumPct,
+  toRow,
+  upsidePct,
+  valueScore,
+} from "./scoring";
+import { DEFAULT_SCORE_WEIGHTS } from "./defaults";
 
 const DAY = 864e5;
 const change = (partial: Partial<TargetChange>): TargetChange => ({
@@ -102,5 +116,94 @@ describe("toRow", () => {
     expect(row.targetMomentumPct).toBeCloseTo(10);
     expect(row.momentum).toBeCloseTo(2);
     expect(row.score).toBeGreaterThan(0);
+  });
+});
+
+describe("band", () => {
+  it("maps lower-is-better metrics", () => {
+    expect(band(8, 40, 8)).toBe(100);
+    expect(band(40, 40, 8)).toBe(0);
+    expect(band(24, 40, 8)).toBeCloseTo(50);
+  });
+  it("returns null for missing input", () => {
+    expect(band(undefined, 0, 1)).toBeNull();
+  });
+});
+
+describe("fundamental factor scores", () => {
+  it("value: cheaper stocks score higher", () => {
+    const cheap = valueScore({ symbol: "A", source: "demo", fetchedAt: 0, forwardPE: 10, priceToBook: 1.2 });
+    const expensive = valueScore({ symbol: "B", source: "demo", fetchedAt: 0, forwardPE: 35, priceToBook: 7 });
+    expect(cheap!).toBeGreaterThan(expensive!);
+  });
+
+  it("quality: profitable, high-margin businesses score higher", () => {
+    const strong = qualityScore({
+      symbol: "A",
+      source: "demo",
+      fetchedAt: 0,
+      returnOnEquity: 0.25,
+      returnOnAssets: 0.12,
+      grossMargin: 0.6,
+      operatingMargin: 0.25,
+      netMargin: 0.2,
+    });
+    const weak = qualityScore({
+      symbol: "B",
+      source: "demo",
+      fetchedAt: 0,
+      returnOnEquity: 0.0,
+      returnOnAssets: 0.0,
+      grossMargin: 0.1,
+      operatingMargin: 0.0,
+      netMargin: 0.0,
+    });
+    expect(strong!).toBeGreaterThan(weak!);
+  });
+
+  it("growth: expanding businesses score higher", () => {
+    const fast = growthScore({ symbol: "A", source: "demo", fetchedAt: 0, revenueGrowth: 0.3, earningsGrowth: 0.3 });
+    const slow = growthScore({ symbol: "B", source: "demo", fetchedAt: 0, revenueGrowth: -0.1, earningsGrowth: -0.1 });
+    expect(fast!).toBeGreaterThan(slow!);
+  });
+
+  it("health: lower leverage and positive cash flow score higher", () => {
+    const sturdy = healthScore({
+      symbol: "A",
+      source: "demo",
+      fetchedAt: 0,
+      debtToEquity: 0.2,
+      currentRatio: 2,
+      freeCashFlow: 1_000_000,
+    });
+    const risky = healthScore({
+      symbol: "B",
+      source: "demo",
+      fetchedAt: 0,
+      debtToEquity: 2,
+      currentRatio: 0.8,
+      freeCashFlow: -1_000_000,
+    });
+    expect(sturdy!).toBeGreaterThan(risky!);
+  });
+
+  it("returns null when no inputs are available", () => {
+    expect(valueScore({ symbol: "A", source: "demo", fetchedAt: 0 })).toBeNull();
+    expect(qualityScore({ symbol: "A", source: "demo", fetchedAt: 0 })).toBeNull();
+    expect(growthScore({ symbol: "A", source: "demo", fetchedAt: 0 })).toBeNull();
+    expect(healthScore({ symbol: "A", source: "demo", fetchedAt: 0 })).toBeNull();
+  });
+
+  it("folds fundamentals into the composite score", () => {
+    const good = score(stock({ forwardPE: 9, priceToBook: 1, returnOnEquity: 0.25 }), 20);
+    const bad = score(stock({ forwardPE: 38, priceToBook: 7, returnOnEquity: 0 }), 20);
+    expect(good).toBeGreaterThan(bad);
+  });
+
+  it("drops zero-weight components instead of counting them as zero", () => {
+    const noFundamentals = score(stock(), 20, { ...DEFAULT_SCORE_WEIGHTS, value: 0, quality: 0, growth: 0, health: 0 });
+    const neutralFundamentals = score(stock(), 20, DEFAULT_SCORE_WEIGHTS);
+    expect(noFundamentals).toBeGreaterThan(0);
+    expect(neutralFundamentals).toBeGreaterThan(0);
   });
 });
