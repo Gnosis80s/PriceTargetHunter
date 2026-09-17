@@ -1,9 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, type ReactNode } from "react";
-import type { AppSettings, Filters, StockData, TargetSnapshot, WatchlistItem } from "../lib/types";
+import type { AppSettings, Filters, ScreenerRow, StockData, TargetSnapshot, TrackedPick, WatchlistItem } from "../lib/types";
 import { DEFAULT_SETTINGS } from "../lib/defaults";
 import { DEFAULT_UNIVERSE } from "../data/universe";
 import { defaultPresetSymbols } from "../data/presets";
 import { usePersistentState } from "../hooks/usePersistentState";
+import { makePick, selectPickCandidates, updatePick } from "../lib/tracking";
 
 interface AppContextValue {
   settings: AppSettings;
@@ -16,16 +17,25 @@ interface AppContextValue {
   isWatched: (symbol: string) => boolean;
   snapshots: Record<string, TargetSnapshot[]>;
   recordSnapshots: (rows: StockData[]) => void;
+  picks: TrackedPick[];
+  benchmark: { price: number; at: number } | null;
+  recordBenchmark: (price: number, at: number) => void;
+  recordPicks: (rows: ScreenerRow[], topN: number, cooldownDays: number, benchmarkPrice: number | null) => void;
+  updatePickPrices: (prices: Map<string, number>, benchmarkPrice: number | null) => void;
+  clearPicks: () => void;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
 
 const MAX_SNAPSHOTS = 240;
+const MAX_PICKS = 500;
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [rawSettings, setRawSettings] = usePersistentState<AppSettings>("settings", DEFAULT_SETTINGS);
   const [watchlist, setWatchlist] = usePersistentState<WatchlistItem[]>("watchlist", []);
   const [snapshots, setSnapshots] = usePersistentState<Record<string, TargetSnapshot[]>>("snapshots", {});
+  const [picks, setPicks] = usePersistentState<TrackedPick[]>("picks", []);
+  const [benchmark, setBenchmark] = usePersistentState<{ price: number; at: number } | null>("benchmark", null);
 
   const settings = useMemo<AppSettings>(() => {
     const merged: AppSettings = {
@@ -119,6 +129,43 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [setSnapshots],
   );
 
+  const recordBenchmark = useCallback(
+    (price: number, at: number) => setBenchmark({ price, at }),
+    [setBenchmark],
+  );
+
+  const recordPicks = useCallback(
+    (rows: ScreenerRow[], topN: number, cooldownDays: number, benchmarkPrice: number | null) => {
+      setPicks((prev) => {
+        const candidates = selectPickCandidates(rows, prev, topN, cooldownDays);
+        if (!candidates.length) return prev;
+        const at = Date.now();
+        const added = candidates.map((r) => makePick(r, benchmarkPrice, at));
+        return [...prev, ...added].slice(-MAX_PICKS);
+      });
+    },
+    [setPicks],
+  );
+
+  const updatePickPrices = useCallback(
+    (prices: Map<string, number>, benchmarkPrice: number | null) => {
+      setPicks((prev) => {
+        let changed = false;
+        const next = prev.map((p) => {
+          const price = prices.get(p.symbol);
+          if (price == null) return p;
+          const updated = updatePick(p, price, benchmarkPrice, Date.now());
+          if (updated !== p) changed = true;
+          return updated;
+        });
+        return changed ? next : prev;
+      });
+    },
+    [setPicks],
+  );
+
+  const clearPicks = useCallback(() => setPicks([]), [setPicks]);
+
   const value: AppContextValue = {
     settings,
     updateSettings,
@@ -130,6 +177,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     isWatched,
     snapshots,
     recordSnapshots,
+    picks,
+    benchmark,
+    recordBenchmark,
+    recordPicks,
+    updatePickPrices,
+    clearPicks,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

@@ -30,6 +30,22 @@ falls back to a bundled offline dataset so the UI is never empty.
   with age decay, top-tier firm weighting, a **consensus confidence** score
   (agreement × coverage × freshness × participation) and a consensus trend
   built from stored snapshots.
+- **Accuracy signals (new)** — three signals with stronger empirical support than
+  the static target level: **forward EPS-estimate revision momentum** (90-day
+  estimate change + 30-day revision breadth), **price-trend confirmation**
+  (distance from the 52-week high, vs the 200-day average, 52-week return), and a
+  **value-trap / event-risk score** (leverage, interest cover, cash burn, short
+  crowding, near-term earnings).
+- **Sector-relative factors (new)** — fundamental and signal factors are ranked
+  as percentiles **within each stock's sector**, so a utility at 15× P/E and a
+  software name at 40× are judged against their peers, not each other.
+- **Track record (new)** — logs the highest-scoring names each scan and measures
+  their return versus a benchmark (SPY), with hit rate, average excess return and
+  a performance-by-holding-period breakdown. This is the feedback loop that tells
+  you whether a scoring change actually improves selection.
+- **Stale-target handling** — upside is computed from the **median** target (not
+  the outlier-sensitive mean), a target with no recent revisions is penalised
+  rather than excused, and a max-target-age filter requires fresh coverage.
 - **Fundamentals factor block** — value, quality, growth and health scores
   (0–100) computed from valuation, profitability, growth and balance-sheet
   metrics, folded into the composite score with configurable weights
@@ -179,23 +195,39 @@ trusted — a high upside on a low-confidence name is a warning sign:
 
 ![Stock detail showing factor scores and the consensus confidence breakdown](docs/stock-detail.png)
 
-Composite **score (0–100)** — a weighted blend of eight components, all
+Upside uses the **median** target when available (the mean is easily skewed by a
+single outlier); `dispersion` and `risk/reward` are likewise measured against it.
+A target with no revisions recent enough to prove it is current is **penalised**
+(freshness floor of 15), not treated as an unknown.
+
+Composite **score (0–100)** — a weighted blend of eleven components, all
 normalised to 0–100. Missing metrics are dropped and the remaining weights
 renormalised, so a gap never silently drags the score down:
 
 ```
-target / analyst factors (default 70%)
-  30%  upside score        (upside / 60%, capped)
-  12%  consensus score     (Strong Buy 1 → Strong Sell 5)
-  12%  momentum score      (50 ± recent, age-decayed target revisions)
-  16%  confidence score    (see above)
+analyst view (default 40%)
+  20%  upside score        (upside / 60%, capped)
+   8%  consensus score     (Strong Buy 1 → Strong Sell 5)
+  12%  confidence score    (see above)
 
-fundamentals factors (default 30%)
-  10%  value score         (P/E, P/B, P/S, EV/EBITDA, PEG, FCF yield, dividend yield)
-  10%  quality score       (ROE, ROA, gross / operating / net margin)
-   6%  growth score        (revenue, earnings and EPS growth)
-   4%  health score        (debt/equity, current ratio, net-debt/EBITDA, interest cover, FCF)
+revision momentum (default 22%)
+  10%  momentum score      (50 ± recent, age-decayed price-target revisions)
+  12%  estimate score      (forward EPS-estimate revisions)
+
+confirmation & risk (default 38%)
+  12%  trend score         (52-week position, vs 200d average, 52-week return)
+   6%  risk score          (value-trap / event-risk safety, higher = safer)
+   6%  value score         (P/E, P/B, P/S, EV/EBITDA, PEG, FCF yield, dividend yield)
+   6%  quality score       (ROE, ROA, gross / operating / net margin)
+   5%  growth score        (revenue, earnings, EPS and forward-EPS growth)
+   3%  health score        (debt/equity, current ratio, net-debt/EBITDA, interest cover, FCF)
 ```
+
+With **Settings → Sector-relative factors** on (default), the fundamental and
+signal factors (`value`, `quality`, `growth`, `health`, `estimate`, `trend`,
+`risk`) are recomputed as **within-sector percentile ranks** before the composite
+is derived; the target-centric factors stay absolute. Sectors with fewer than 5
+constituents fall back to the whole scanned universe.
 
 All eight weights are **configurable in Settings → Score weights** (relative,
 normalised by their sum). Fundamentals are sourced from Yahoo `financialData` /
@@ -214,7 +246,8 @@ Providers are retried with exponential
 backoff, and failed symbols can be inspected (with per-provider reasons) from
 the banner above the results.
 
-Unit tests cover scoring, momentum, filters and CSV export:
+Unit tests cover scoring, momentum, accuracy signals, sector-relative ranking,
+filters, forward-return tracking and CSV export:
 
 ```bash
 npm test   # vitest
@@ -240,7 +273,8 @@ price-target-hunter/
    │  ├─ FiltersPanel.tsx      # filter controls
    │  ├─ StockDetail.tsx       # detail dialog (charts, ratings, news)
    │  ├─ WatchlistView.tsx     # saved symbols + change since added
-   │  ├─ SettingsPanel.tsx     # sources, keys, alerts, universe
+   │  ├─ TrackingView.tsx      # logged picks + forward-return track record
+   │  ├─ SettingsPanel.tsx     # sources, keys, alerts, universe, weights
    │  └─ LineChart.tsx         # dependency-free SVG multi-line chart
    ├─ hooks/
    │  ├─ useScreener.ts        # scan orchestration, auto-refresh, alerts
@@ -254,6 +288,8 @@ price-target-hunter/
    ├─ lib/
     │  ├─ types.ts              # StockData, ScreenerRow, Filters, Settings…
     │  ├─ scoring.ts            # upside / risk-reward / momentum / factors / score
+    │  ├─ rank.ts               # within-sector percentile ranking of factors
+    │  ├─ tracking.ts           # pick logging + forward-return statistics
     │  ├─ glossary.ts           # plain-language metric explanations (tooltips)
     │  ├─ history.ts            # target-history series from analyst actions
    │  ├─ screener.ts           # applyFilters + sortRows

@@ -78,6 +78,36 @@ export interface StockData {
   /** Longer-horizon EPS growth (fraction) used in the growth factor. */
   epsGrowth?: number;
 
+  // --- Forward estimates (revision momentum) ---
+  /** Consensus forward EPS estimate for the current/next fiscal year. */
+  forwardEps?: number;
+  /** The same forward EPS estimate as of ~90 days ago (point-in-time). */
+  forwardEps90dAgo?: number;
+  /** Fractional change in the forward EPS estimate over ~90 days. */
+  epsRevisionPct?: number;
+  /** Upward EPS-estimate revisions in the last 30 days. */
+  epsRevisionsUp30d?: number;
+  /** Downward EPS-estimate revisions in the last 30 days. */
+  epsRevisionsDown30d?: number;
+  /** Expected EPS growth for the forward year (fraction). */
+  forwardEpsGrowth?: number;
+
+  // --- Price trend ---
+  fiftyTwoWeekHigh?: number;
+  fiftyTwoWeekLow?: number;
+  twoHundredDayAverage?: number;
+  fiftyDayAverage?: number;
+  /** Fractional price change over the last 52 weeks. */
+  week52Change?: number;
+
+  // --- Event risk / distress ---
+  /** Epoch ms of the next expected earnings report. */
+  nextEarningsDate?: number;
+  /** Shares short as a fraction of float (e.g. 0.08 = 8%). */
+  shortPercentOfFloat?: number;
+  /** Days-to-cover ratio (shares short / average daily volume). */
+  shortRatio?: number;
+
   targetChanges?: TargetChange[];
   source: DataSource;
   fetchedAt: number;
@@ -100,7 +130,46 @@ export interface ScreenerRow extends StockData {
   healthScore: number | null;
   /** How trustworthy the analyst consensus is (agreement, coverage, freshness, tier-1). */
   confidenceScore: number | null;
+  /** Forward EPS-estimate revision momentum (0-100); null when unavailable. */
+  estimateMomentumScore: number | null;
+  /** Price-trend confirmation (distance from 52w high, vs 200d MA, 52w change). */
+  priceTrendScore: number | null;
+  /** Value-trap / event-risk safety score (0-100, higher = safer). */
+  riskScore: number | null;
+  /** Human-readable risk flags (near earnings, high leverage, …). */
+  riskFlags: string[];
+  /** Days until the next expected earnings report (negative = past, null = unknown). */
+  earningsInDays: number | null;
+  /** Distance from the 52-week high as a fraction (e.g. -0.2 = 20% below). */
+  pctFrom52wHigh: number | null;
+  /** Price versus the 200-day moving average as a fraction. */
+  pctVs200d: number | null;
+  /** True when factor scores were ranked within sector (vs. absolute bands). */
+  rankedBySector: boolean;
   score: number;
+}
+
+/** One point in the track-record series: a stock logged when it entered the screen. */
+export interface TrackedPick {
+  id: string;
+  symbol: string;
+  name?: string;
+  sector?: string;
+  addedAt: number;
+  entryPrice: number;
+  entryUpsidePct: number | null;
+  entryScore: number;
+  /** Benchmark (e.g. SPY) price when the pick was logged. */
+  entryBenchmark: number | null;
+  /** Latest observed price and when it was seen. */
+  lastPrice: number | null;
+  lastAt: number | null;
+  /** Price return since entry, in %. */
+  returnPct: number | null;
+  /** Benchmark return over the same window, in %. */
+  benchmarkReturnPct: number | null;
+  /** returnPct − benchmarkReturnPct. */
+  excessPct: number | null;
 }
 
 /**
@@ -116,6 +185,12 @@ export interface ScoreWeights {
   quality: number;
   growth: number;
   health: number;
+  /** Forward estimate-revision momentum (independent of price-target revisions). */
+  estimate: number;
+  /** Price-trend confirmation (avoids catching a falling knife). */
+  trend: number;
+  /** Value-trap / event-risk avoidance. */
+  risk: number;
 }
 
 export interface Filters {
@@ -131,6 +206,14 @@ export interface Filters {
   minRiskReward: number;
   /** Skip names whose target range is wider than this (% of mean). 1000 = no limit. */
   maxDispersion: number;
+  /** Exclude names whose newest analyst action is older than this many days. 0 = no limit. */
+  maxTargetAgeDays: number;
+  /** Minimum price-trend score (0-100). 0 = no limit. */
+  minPriceTrend: number;
+  /** Exclude names reporting earnings within this many days. 0 = no limit. */
+  excludeEarningsWithinDays: number;
+  /** Minimum value-trap / event-risk safety score (0-100). 0 = no limit. */
+  minRiskScore: number;
   onlyRecentUpgrades: boolean;
   onlyWithTargets: boolean;
 }
@@ -152,6 +235,16 @@ export interface AppSettings {
   universe: string[];
   /** id of the selected preset (see data/presets.ts); "custom" when hand-edited. */
   universePreset: string;
+  /** Rank fundamental/signal factors as percentiles within each sector. */
+  sectorRelative: boolean;
+  /** Log screen picks and evaluate their forward return versus a benchmark. */
+  trackEnabled: boolean;
+  /** How many top-scoring names to log per scan. */
+  trackTopN: number;
+  /** Don't re-log a symbol within this many days of its last pick. */
+  trackCooldownDays: number;
+  /** Benchmark symbol used to measure excess return (e.g. SPY). */
+  benchmarkSymbol: string;
   filters: Filters;
   /** Relative weights for each component of the composite score. */
   scoreWeights: ScoreWeights;

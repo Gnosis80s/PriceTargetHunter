@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, Eye, Star } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp, Eye, Star } from "lucide-react";
 import type { ScreenerRow } from "../lib/types";
 import { Badge, Button, InfoTip } from "./ui";
 import { fmtCompact, fmtMoney, fmtNum, fmtPct, recLabel } from "../lib/utils";
@@ -18,6 +18,9 @@ const COLUMNS: { key: SortKey | "consensus"; label: string; align?: "right"; sor
   { key: "momentum", label: "Momentum", align: "right", sortable: true, tip: GLOSSARY.momentum },
   { key: "targetMomentumPct", label: "Tgt Δ", align: "right", sortable: true, tip: GLOSSARY.targetMomentumPct },
   { key: "confidenceScore", label: "Conf", align: "right", sortable: true, tip: GLOSSARY.confidence },
+  { key: "estimateMomentumScore", label: "Est Δ", align: "right", sortable: true, tip: GLOSSARY.estimateMomentum },
+  { key: "priceTrendScore", label: "Trend", align: "right", sortable: true, tip: GLOSSARY.priceTrend },
+  { key: "riskScore", label: "Risk", align: "right", sortable: true, tip: GLOSSARY.riskScore },
   { key: "score", label: "Score", align: "right", sortable: true, tip: GLOSSARY.score },
   { key: "valueScore", label: "Val", align: "right", sortable: true, tip: GLOSSARY.valueFactor },
   { key: "qualityScore", label: "Qual", align: "right", sortable: true, tip: GLOSSARY.qualityFactor },
@@ -86,7 +89,14 @@ export function ScreenerTable({ rows, onSelect }: { rows: ScreenerRow[]; onSelec
                 onClick={() => onSelect(r.symbol)}
               >
                 <td className="px-3 py-2">
-                  <div className="font-semibold">{r.symbol}</div>
+                  <div className="flex items-center gap-1 font-semibold">
+                    {r.symbol}
+                    {r.earningsInDays != null && r.earningsInDays >= 0 && r.earningsInDays <= 14 ? (
+                      <span title={`Earnings in ${r.earningsInDays}d`}>
+                        <AlertTriangle size={12} className="text-warn" />
+                      </span>
+                    ) : null}
+                  </div>
                   <div className="max-w-[220px] truncate text-xs text-muted">{r.name ?? "—"}</div>
                 </td>
                 <td className="px-3 py-2 text-right tabular">{fmtMoney(r.price, r.currency)}</td>
@@ -116,6 +126,21 @@ export function ScreenerTable({ rows, onSelect }: { rows: ScreenerRow[]; onSelec
                 </td>
                 <td className={`px-3 py-2 text-right tabular ${factorTone(r.confidenceScore)}`}>
                   {r.confidenceScore == null ? "—" : fmtNum(r.confidenceScore, 0)}
+                </td>
+                <td
+                  className={`px-3 py-2 text-right tabular ${factorTone(r.estimateMomentumScore)}`}
+                  title={r.epsRevisionPct != null ? `90d EPS estimate revision ${fmtPct(r.epsRevisionPct * 100)}` : undefined}
+                >
+                  {r.estimateMomentumScore == null ? "—" : fmtNum(r.estimateMomentumScore, 0)}
+                </td>
+                <td className={`px-3 py-2 text-right tabular ${factorTone(r.priceTrendScore)}`}>
+                  {r.priceTrendScore == null ? "—" : fmtNum(r.priceTrendScore, 0)}
+                </td>
+                <td
+                  className={`px-3 py-2 text-right tabular ${factorTone(r.riskScore)}`}
+                  title={r.riskFlags.length ? r.riskFlags.join(", ") : undefined}
+                >
+                  {r.riskScore == null ? "—" : fmtNum(r.riskScore, 0)}
                 </td>
                 <td className="px-3 py-2 text-right">
                   <div className="flex items-center justify-end gap-2">

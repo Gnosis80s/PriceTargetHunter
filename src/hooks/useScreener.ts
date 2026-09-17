@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ScreenerRow } from "../lib/types";
 import { applyFilters } from "../lib/screener";
-import { scanUniverse } from "../providers";
+import { scanUniverse, fetchStock } from "../providers";
 import { toRow } from "../lib/scoring";
+import { rankRowsBySector } from "../lib/rank";
 import { useApp } from "../store/AppStore";
 
 export function notify(title: string, body: string) {
@@ -27,7 +28,14 @@ export async function ensureNotificationPermission(): Promise<boolean> {
 }
 
 export function useScreener() {
-  const { settings, recordSnapshots, isWatched } = useApp();
+  const {
+    settings,
+    recordSnapshots,
+    isWatched,
+    recordBenchmark,
+    recordPicks,
+    updatePickPrices,
+  } = useApp();
   const [allRows, setAllRows] = useState<ScreenerRow[]>([]);
   const [scanning, setScanning] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
@@ -88,6 +96,18 @@ export function useScreener() {
       setErrors([]);
       setAllRows([]);
       setProgress({ done: 0, total: settings.universe.length });
+
+      // Batch streamed rows instead of appending one at a time: individual
+      // setState calls are O(n²) and re-filter the table on every symbol.
+      const buffer: ScreenerRow[] = [];
+      let flushTimer: ReturnType<typeof setTimeout> | null = null;
+      const flush = () => {
+        flushTimer = null;
+        if (!buffer.length) return;
+        const batch = buffer.splice(0, buffer.length);
+        setAllRows((prev) => [...prev, ...batch]);
+      };
+
       try {
         const res = await scanUniverse(
           settings.universe,
@@ -96,22 +116,56 @@ export function useScreener() {
           {
             bypassCache,
             signal: abortRef.current.signal,
-            onRow: (stock) => setAllRows((prev) => [...prev, toRow(stock, settings.scoreWeights)]),
+            onRow: (stock) => {
+              buffer.push(toRow(stock, settings.scoreWeights));
+              if (flushTimer == null) flushTimer = setTimeout(flush, 60);
+            },
           },
         );
+        if (flushTimer != null) {
+          clearTimeout(flushTimer);
+          flushTimer = null;
+        }
+        buffer.length = 0;
+
         const mapped = res.rows.map((r) => toRow(r, settings.scoreWeights));
-        setAllRows(mapped);
+        const finalRows = settings.sectorRelative
+          ? rankRowsBySector(mapped, settings.scoreWeights)
+          : mapped;
+        setAllRows(finalRows);
         setErrors(res.errors);
         setLastUpdated(Date.now());
         recordSnapshots(res.rows);
-        detectAlerts(mapped);
+        detectAlerts(finalRows);
+
+        const aborted = abortRef.current?.signal.aborted ?? false;
+        if (settings.trackEnabled && !aborted) {
+          let benchmarkPrice: number | null = null;
+          try {
+            const { data } = await fetchStock(settings.benchmarkSymbol, settings);
+            benchmarkPrice = data.price ?? null;
+          } catch {
+            /* benchmark is best-effort */
+          }
+          if (benchmarkPrice != null) recordBenchmark(benchmarkPrice, Date.now());
+
+          const priceMap = new Map<string, number>();
+          for (const r of finalRows) if (r.price != null) priceMap.set(r.symbol, r.price);
+          updatePickPrices(priceMap, benchmarkPrice);
+          recordPicks(
+            applyFilters(finalRows, settings.filters),
+            settings.trackTopN,
+            settings.trackCooldownDays,
+            benchmarkPrice,
+          );
+        }
       } finally {
         setScanning(false);
         scanningRef.current = false;
         abortRef.current = null;
       }
     },
-    [settings, recordSnapshots, detectAlerts],
+    [settings, recordSnapshots, detectAlerts, recordBenchmark, recordPicks, updatePickPrices],
   );
 
   const stopScan = useCallback(() => {

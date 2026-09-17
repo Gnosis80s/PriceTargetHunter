@@ -12,6 +12,9 @@ const WEIGHT_FIELDS: { key: keyof ScoreWeights; label: string; tip: string }[] =
   { key: "consensus", label: "Consensus", tip: GLOSSARY.consensus },
   { key: "momentum", label: "Momentum", tip: GLOSSARY.momentum },
   { key: "confidence", label: "Confidence", tip: GLOSSARY.confidence },
+  { key: "estimate", label: "Est. revisions", tip: GLOSSARY.estimateMomentum },
+  { key: "trend", label: "Price trend", tip: GLOSSARY.priceTrend },
+  { key: "risk", label: "Risk", tip: GLOSSARY.riskScore },
   { key: "value", label: "Value", tip: GLOSSARY.valueFactor },
   { key: "quality", label: "Quality", tip: GLOSSARY.qualityFactor },
   { key: "growth", label: "Growth", tip: GLOSSARY.growthFactor },
@@ -82,6 +85,16 @@ export function SettingsPanel() {
               />
             </Field>
           </div>
+          <label className="flex items-center justify-between gap-2 text-sm">
+            <span>
+              Sector-relative factors{" "}
+              <span className="text-xs text-muted">(rank each factor within its sector)</span>
+            </span>
+            <Switch
+              checked={settings.sectorRelative}
+              onChange={(v) => updateSettings({ sectorRelative: v })}
+            />
+          </label>
         </div>
       </Card>
 
@@ -193,6 +206,49 @@ export function SettingsPanel() {
               placeholder="https://hooks.example.com/..."
               value={settings.webhookUrl}
               onChange={(e) => updateSettings({ webhookUrl: e.target.value })}
+            />
+          </Field>
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader
+          title="Track record"
+          subtitle="Log screen picks and measure their forward return"
+        />
+        <div className="flex flex-col gap-4 p-4">
+          <label className="flex items-center justify-between gap-2 text-sm">
+            <span>
+              Track picks{" "}
+              <span className="text-xs text-muted">(log the top names each scan)</span>
+            </span>
+            <Switch checked={settings.trackEnabled} onChange={(v) => updateSettings({ trackEnabled: v })} />
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Picks per scan" tip={GLOSSARY.trackRecord}>
+              <Input
+                type="number"
+                min={1}
+                max={50}
+                value={settings.trackTopN}
+                onChange={(e) => updateSettings({ trackTopN: Math.max(1, Number(e.target.value) || 10) })}
+              />
+            </Field>
+            <Field label="Cooldown (days)" hint="Don't re-log a symbol within this window">
+              <Input
+                type="number"
+                min={0}
+                value={settings.trackCooldownDays}
+                onChange={(e) => updateSettings({ trackCooldownDays: Math.max(0, Number(e.target.value) || 0) })}
+              />
+            </Field>
+          </div>
+          <Field label="Benchmark symbol" hint="Used to measure excess return (e.g. SPY, QQQ).">
+            <Input
+              type="text"
+              placeholder="SPY"
+              value={settings.benchmarkSymbol}
+              onChange={(e) => updateSettings({ benchmarkSymbol: e.target.value.toUpperCase() })}
             />
           </Field>
         </div>

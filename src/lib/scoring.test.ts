@@ -3,20 +3,30 @@ import type { StockData, TargetChange } from "./types";
 import {
   ageWeight,
   band,
+  compositeScore,
   confidenceParts,
   confidenceScore,
+  consensusTarget,
+  daysUntil,
   dispersion,
+  estimateMomentumScore,
   freshnessScore,
   growthScore,
   healthScore,
   isTopTierFirm,
   momentum,
   participationScore,
+  priceTrendScore,
   qualityScore,
+  riskFlags,
   riskReward,
+  riskScore,
   score,
+  scoreParts,
+  targetAgeDays,
   targetMomentumPct,
   toRow,
+  UNKNOWN_FRESHNESS,
   upsidePct,
   valueScore,
 } from "./scoring";
@@ -278,7 +288,147 @@ describe("confidenceScore", () => {
     const parts = confidenceParts(stock({ analystCount: 10 }), 20);
     expect(parts.agreement).toBeCloseTo(100 - 20 * 0.8, 1);
     expect(parts.coverage).toBeCloseTo(50, 1);
-    expect(parts.freshness).toBeNull();
+    // A target with no dated revisions is penalised, not treated as unknown.
+    expect(parts.freshness).toBe(UNKNOWN_FRESHNESS);
     expect(parts.participation).toBeNull();
+  });
+
+  it("does not invent freshness for a stock with no target", () => {
+    const parts = confidenceParts({ symbol: "X", source: "demo", fetchedAt: 0 }, null);
+    expect(parts.freshness).toBeNull();
+  });
+
+  it("penalises a stale target more than a freshly revised one", () => {
+    const fresh = confidenceScore(stock({ targetChanges: [change({ date: Date.now() })] }), 20);
+    const stale = confidenceScore(stock({ targetChanges: [] }), 20);
+    expect(fresh!).toBeGreaterThan(stale!);
+  });
+});
+
+describe("consensusTarget & targetAgeDays", () => {
+  it("prefers the median target", () => {
+    expect(consensusTarget(stock({ targetMean: 120, targetMedian: 115 }))).toBe(115);
+    expect(consensusTarget(stock({ targetMean: 120 }))).toBe(120);
+  });
+
+  it("measures the age of the newest action", () => {
+    const age = targetAgeDays([change({ date: Date.now() - 10 * DAY })]);
+    expect(age).toBeCloseTo(10, 0);
+    expect(targetAgeDays([])).toBeNull();
+    expect(targetAgeDays(undefined)).toBeNull();
+  });
+});
+
+describe("accuracy signals", () => {
+  it("estimate momentum rises with upward revisions", () => {
+    const up = estimateMomentumScore({
+      symbol: "A",
+      source: "demo",
+      fetchedAt: 0,
+      epsRevisionPct: 0.08,
+      epsRevisionsUp30d: 5,
+      epsRevisionsDown30d: 0,
+      forwardEpsGrowth: 0.25,
+    });
+    const down = estimateMomentumScore({
+      symbol: "B",
+      source: "demo",
+      fetchedAt: 0,
+      epsRevisionPct: -0.08,
+      epsRevisionsUp30d: 0,
+      epsRevisionsDown30d: 5,
+      forwardEpsGrowth: -0.1,
+    });
+    expect(up!).toBeGreaterThan(down!);
+    expect(estimateMomentumScore({ symbol: "C", source: "demo", fetchedAt: 0 })).toBeNull();
+  });
+
+  it("price trend rewards strength near the high and above the 200d", () => {
+    const strong = priceTrendScore({
+      symbol: "A",
+      source: "demo",
+      fetchedAt: 0,
+      price: 100,
+      fiftyTwoWeekHigh: 105,
+      fiftyTwoWeekLow: 60,
+      twoHundredDayAverage: 90,
+      week52Change: 0.3,
+    });
+    const weak = priceTrendScore({
+      symbol: "B",
+      source: "demo",
+      fetchedAt: 0,
+      price: 100,
+      fiftyTwoWeekHigh: 200,
+      fiftyTwoWeekLow: 95,
+      twoHundredDayAverage: 130,
+      week52Change: -0.3,
+    });
+    expect(strong!).toBeGreaterThan(weak!);
+  });
+
+  it("risk score punishes leverage and negative cash flow", () => {
+    const safe = riskScore({
+      symbol: "A",
+      source: "demo",
+      fetchedAt: 0,
+      netDebtToEbitda: 0.2,
+      interestCoverage: 12,
+      currentRatio: 2,
+      freeCashFlow: 1_000_000,
+      shortPercentOfFloat: 0.01,
+    });
+    const risky = riskScore({
+      symbol: "B",
+      source: "demo",
+      fetchedAt: 0,
+      netDebtToEbitda: 6,
+      interestCoverage: 1,
+      currentRatio: 0.7,
+      freeCashFlow: -1_000_000,
+      shortPercentOfFloat: 0.25,
+    });
+    expect(safe!).toBeGreaterThan(risky!);
+  });
+
+  it("flags near-term earnings and leverage", () => {
+    const flags = riskFlags({
+      symbol: "A",
+      source: "demo",
+      fetchedAt: 0,
+      nextEarningsDate: Date.now() + 5 * DAY,
+      netDebtToEbitda: 6,
+      freeCashFlow: -1,
+    });
+    expect(flags.some((f) => f.startsWith("Earnings in"))).toBe(true);
+    expect(flags).toContain("High leverage");
+    expect(flags).toContain("Negative FCF");
+  });
+
+  it("computes days until an event", () => {
+    expect(daysUntil(undefined)).toBeNull();
+    expect(daysUntil(Date.now() + 3 * DAY)).toBe(3);
+  });
+});
+
+describe("composite scoring", () => {
+  it("exposes parts and blends them", () => {
+    const parts = scoreParts(stock(), 20);
+    expect(parts.upside).not.toBeNull();
+    expect(compositeScore(parts)).toBe(score(stock(), 20));
+  });
+
+  it("new signals move the composite", () => {
+    const base = score(stock(), 20);
+    const trended = score(
+      stock({
+        price: 100,
+        fiftyTwoWeekHigh: 105,
+        twoHundredDayAverage: 90,
+        week52Change: 0.3,
+      }),
+      20,
+    );
+    expect(trended).not.toBe(base);
   });
 });

@@ -3,6 +3,7 @@ import {
   Crosshair,
   Download,
   LayoutDashboard,
+  LineChart,
   ListFilter,
   Moon,
   RefreshCw,
@@ -19,18 +20,20 @@ import { FiltersPanel } from "./components/FiltersPanel";
 import { StockDetail } from "./components/StockDetail";
 import { WatchlistView } from "./components/WatchlistView";
 import { SettingsPanel } from "./components/SettingsPanel";
+import { TrackingView } from "./components/TrackingView";
 import { Button, Dialog, ProgressBar } from "./components/ui";
 import { DEFAULT_FILTERS } from "./lib/defaults";
 import { downloadCsv } from "./lib/csv";
 import { ALL_SECTORS } from "./data/universe";
 import { timeAgo } from "./lib/utils";
 
-type Tab = "dashboard" | "screener" | "watchlist" | "settings";
+type Tab = "dashboard" | "screener" | "watchlist" | "track" | "settings";
 
 const TABS: { id: Tab; label: string; icon: typeof Crosshair }[] = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "screener", label: "Screener", icon: ListFilter },
   { id: "watchlist", label: "Watchlist", icon: Star },
+  { id: "track", label: "Track record", icon: LineChart },
   { id: "settings", label: "Settings", icon: SettingsIcon },
 ];
 
@@ -149,6 +152,7 @@ export default function App() {
         ) : null}
 
         {tab === "watchlist" ? <WatchlistView rows={allRows} onSelect={setSelected} /> : null}
+        {tab === "track" ? <TrackingView /> : null}
         {tab === "settings" ? <SettingsPanel /> : null}
       </main>
 

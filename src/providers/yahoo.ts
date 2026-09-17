@@ -97,6 +97,34 @@ export async function fetchYahoo(symbol: string): Promise<StockData> {
     if (total > 0) recMean = (sb * 1 + b * 2 + h * 3 + s * 4 + ss * 5) / total;
   }
 
+  // Forward estimate revisions (from earningsTrend): prefer the current fiscal
+  // year, then next year, then whatever is available.
+  const earningsTrend = pick(r, "earningsTrend.trend") as any[] | undefined;
+  const estimate =
+    (Array.isArray(earningsTrend) ? earningsTrend.find((t) => t?.period === "0y") : undefined) ??
+    (Array.isArray(earningsTrend) ? earningsTrend.find((t) => t?.period === "+1y") : undefined) ??
+    (Array.isArray(earningsTrend) ? earningsTrend[0] : undefined);
+  const epsTrend = estimate?.epsTrend;
+  const epsRevisions = estimate?.epsRevisions;
+  const forwardEps = num(epsTrend?.current);
+  const forwardEps90dAgo = num(epsTrend?.["90daysAgo"]);
+  const epsRevisionPct =
+    forwardEps != null && forwardEps90dAgo != null && forwardEps90dAgo !== 0
+      ? (forwardEps - forwardEps90dAgo) / Math.abs(forwardEps90dAgo)
+      : undefined;
+
+  // Price trend.
+  const fiftyTwoWeekHigh = num(detail?.fiftyTwoWeekHigh) ?? num(price?.fiftyTwoWeekHigh);
+  const fiftyTwoWeekLow = num(detail?.fiftyTwoWeekLow) ?? num(price?.fiftyTwoWeekLow);
+  const twoHundredDayAverage = num(detail?.twoHundredDayAverage) ?? num(price?.twoHundredDayAverage);
+  const fiftyDayAverage = num(detail?.fiftyDayAverage) ?? num(price?.fiftyDayAverage);
+  const week52Change = num(stats?.["52WeekChange"]) ?? num(stats?.fiftyTwoWeekChange);
+
+  // Event risk.
+  const rawEarningsDates = pick(r, "calendarEvents.earnings.earningsDate") as unknown;
+  const firstEarningsDate = Array.isArray(rawEarningsDates) ? rawEarningsDates[0] : undefined;
+  const nextEarningsDate = firstEarningsDate != null ? epochMs(firstEarningsDate) : undefined;
+
   return {
     symbol,
     name: price?.longName ?? price?.shortName ?? undefined,
@@ -143,6 +171,23 @@ export async function fetchYahoo(symbol: string): Promise<StockData> {
     debtToEquity: num(fin?.debtToEquity) != null ? num(fin?.debtToEquity)! / 100 : undefined,
     currentRatio: num(fin?.currentRatio),
     epsGrowth: num(stats?.earningsQuarterlyGrowth),
+
+    forwardEps,
+    forwardEps90dAgo,
+    epsRevisionPct,
+    epsRevisionsUp30d: num(epsRevisions?.upLast30days),
+    epsRevisionsDown30d: num(epsRevisions?.downLast30days),
+    forwardEpsGrowth: num(estimate?.earningsEstimate?.growth),
+
+    fiftyTwoWeekHigh,
+    fiftyTwoWeekLow,
+    twoHundredDayAverage,
+    fiftyDayAverage,
+    week52Change,
+
+    nextEarningsDate: nextEarningsDate && nextEarningsDate > 0 ? nextEarningsDate : undefined,
+    shortPercentOfFloat: num(stats?.shortPercentOfFloat),
+    shortRatio: num(stats?.shortRatio),
 
     targetChanges: mapGradeHistory(pick(r, "upgradeDowngradeHistory.history")),
     source: "yahoo",

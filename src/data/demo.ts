@@ -117,6 +117,24 @@ export function demoData(): StockData[] {
       debtToEquity: 0.2 + (pe % 6) * 0.25,
       currentRatio: 1 + ((pe + analysts) % 5) * 0.3,
       epsGrowth: 0.03 + (ups % 5) * 0.03,
+
+      forwardEps: (price / pe) * (1 + (ups % 5) * 0.04),
+      forwardEps90dAgo: (price / pe) * (1 - (downs % 3) * 0.03),
+      epsRevisionPct: -0.04 + (ups % 6) * 0.025,
+      epsRevisionsUp30d: ups,
+      epsRevisionsDown30d: downs,
+      forwardEpsGrowth: 0.03 + (ups % 5) * 0.04,
+
+      week52Change: -0.08 + (ups % 7) * 0.06,
+      fiftyTwoWeekHigh: price * (1.12 + (ups % 4) * 0.04),
+      fiftyTwoWeekLow: price * (0.72 + (downs % 4) * 0.05),
+      twoHundredDayAverage: price * (0.94 + (ups % 5) * 0.02),
+      fiftyDayAverage: price * (0.97 + (ups % 3) * 0.015),
+
+      nextEarningsDate: Date.now() + (5 + (analysts % 60)) * 864e5,
+      shortPercentOfFloat: 0.01 + (pe % 6) * 0.02,
+      shortRatio: 1 + (pe % 8) * 0.5,
+
       targetChanges: makeChanges(ups, downs),
       source: "demo",
       fetchedAt: Date.now(),

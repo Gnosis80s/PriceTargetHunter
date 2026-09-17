@@ -30,6 +30,23 @@ export function dispersion(
   return ((high - low) / mean) * 100;
 }
 
+/**
+ * The consensus target we rank on. The median is preferred because a single
+ * wild high/low target can move the mean substantially; the mean is the
+ * fallback when no median is published.
+ */
+export function consensusTarget(stock: StockData): number | undefined {
+  return stock.targetMedian ?? stock.targetMean;
+}
+
+/** Days since the most recent analyst action, or null when none are known. */
+export function targetAgeDays(changes: TargetChange[] | undefined): number | null {
+  if (!changes?.length) return null;
+  const latest = Math.max(...changes.map((c) => c.date));
+  if (!latest) return null;
+  return Math.max(0, (Date.now() - latest) / 864e5);
+}
+
 function recentChanges(changes: TargetChange[] | undefined, days: number): TargetChange[] {
   if (!changes?.length) return [];
   const cutoff = Date.now() - days * 864e5;
@@ -178,12 +195,20 @@ export interface ConfidenceParts {
   participation: number | null;
 }
 
+/**
+ * Freshness applied when a stock has a target but none of the analyst actions
+ * are recent enough to prove the consensus is current. An old/undated target is
+ * a liability, not a neutral unknown, so it is penalised rather than dropped.
+ */
+export const UNKNOWN_FRESHNESS = 15;
+
 /** The four inputs behind the consensus confidence score, for display. */
 export function confidenceParts(stock: StockData, disp: number | null): ConfidenceParts {
+  const hasTarget = stock.targetMean != null || stock.targetMedian != null;
   return {
     agreement: disp == null ? null : clamp(100 - disp * 0.8),
     coverage: stock.analystCount == null ? null : clamp((stock.analystCount / 20) * 100),
-    freshness: freshnessScore(stock.targetChanges),
+    freshness: freshnessScore(stock.targetChanges) ?? (hasTarget ? UNKNOWN_FRESHNESS : null),
     participation: participationScore(stock.targetChanges),
   };
 }
@@ -211,42 +236,179 @@ export function confidenceScore(stock: StockData, disp: number | null): number |
   return weights > 0 ? round(sum / weights, 1) : null;
 }
 
+/** All component values that feed the composite score, each normalised 0-100. */
+export interface ScoreParts {
+  upside: number | null;
+  consensus: number | null;
+  momentum: number | null;
+  confidence: number | null;
+  value: number | null;
+  quality: number | null;
+  growth: number | null;
+  health: number | null;
+  estimate: number | null;
+  trend: number | null;
+  risk: number | null;
+}
+
+/** Analyst upside normalised to 0-100 (a 60% upside saturates the scale). */
+export function upsideScore(stock: StockData): number | null {
+  const up = upsidePct(consensusTarget(stock), stock.price);
+  return up == null ? null : clamp((up / 60) * 100);
+}
+
+/** Recommendation mean (1 = strong buy) normalised to 0-100. */
+export function consensusScore(stock: StockData): number | null {
+  return stock.recommendationMean == null ? null : clamp(((5 - stock.recommendationMean) / 4) * 100);
+}
+
+/** Price-target revision momentum centred on 50 (± net revision points). */
+export function momentumScore(stock: StockData): number {
+  return clamp(50 + momentum(stock.targetChanges) * 12.5);
+}
+
 /**
- * Composite 0-100 conviction score.
- *
- * Nine components — five target/analyst driven and four fundamentals driven —
- * are each normalised to 0-100, then averaged using relative weights. Components
- * with no data (and zero-weight components) are dropped and the remaining
- * weights renormalised, so a missing metric never silently drags the score down.
+ * Compute every component of the composite score for a stock. Kept separate so
+ * the cross-sectional ranking pass can override the factor values (e.g. with
+ * sector-relative percentiles) and recompute the composite without re-deriving
+ * the target-centric parts.
+ */
+export function scoreParts(stock: StockData, disp: number | null): ScoreParts {
+  return {
+    upside: upsideScore(stock),
+    consensus: consensusScore(stock),
+    momentum: momentumScore(stock),
+    confidence: confidenceScore(stock, disp),
+    value: valueScore(stock),
+    quality: qualityScore(stock),
+    growth: growthScore(stock),
+    health: healthScore(stock),
+    estimate: estimateMomentumScore(stock),
+    trend: priceTrendScore(stock),
+    risk: riskScore(stock),
+  };
+}
+
+/**
+ * Weighted average of the component scores. Components with no data (and
+ * zero-weight components) are dropped and the remaining weights renormalised, so
+ * a missing metric never silently drags the score down.
+ */
+export function compositeScore(parts: ScoreParts, weights: ScoreWeights = DEFAULT_SCORE_WEIGHTS): number {
+  const components: [number | null, number][] = [
+    [parts.upside, weights.upside],
+    [parts.consensus, weights.consensus],
+    [parts.momentum, weights.momentum],
+    [parts.confidence, weights.confidence],
+    [parts.value, weights.value],
+    [parts.quality, weights.quality],
+    [parts.growth, weights.growth],
+    [parts.health, weights.health],
+    [parts.estimate, weights.estimate],
+    [parts.trend, weights.trend],
+    [parts.risk, weights.risk],
+  ];
+
+  let sum = 0;
+  let wsum = 0;
+  for (const [value, weight] of components) {
+    if (value == null || weight <= 0) continue;
+    sum += value * weight;
+    wsum += weight;
+  }
+  if (wsum <= 0) return 50;
+  return round(sum / wsum, 1);
+}
+
+/**
+ * Composite 0-100 conviction score — eleven components blended by relative
+ * weight. It ranks ideas to investigate; it is not a buy signal.
  */
 export function score(
   stock: StockData,
   disp: number | null,
   weights: ScoreWeights = DEFAULT_SCORE_WEIGHTS,
 ): number {
-  const up = upsidePct(stock.targetMean, stock.price);
-  const rec = stock.recommendationMean;
+  return compositeScore(scoreParts(stock, disp), weights);
+}
 
-  const components: { value: number | null; weight: number }[] = [
-    { value: up == null ? null : clamp((up / 60) * 100), weight: weights.upside },
-    { value: rec == null ? null : clamp(((5 - rec) / 4) * 100), weight: weights.consensus },
-    { value: clamp(50 + momentum(stock.targetChanges) * 12.5), weight: weights.momentum },
-    { value: confidenceScore(stock, disp), weight: weights.confidence },
-    { value: valueScore(stock), weight: weights.value },
-    { value: qualityScore(stock), weight: weights.quality },
-    { value: growthScore(stock), weight: weights.growth },
-    { value: healthScore(stock), weight: weights.health },
-  ];
+/** Whole days until a timestamp (negative once it is in the past), or null. */
+export function daysUntil(ts: number | undefined): number | null {
+  if (!ts) return null;
+  return Math.ceil((ts - Date.now()) / 864e5);
+}
 
-  let sum = 0;
-  let wsum = 0;
-  for (const c of components) {
-    if (c.value == null || c.weight <= 0) continue;
-    sum += c.value * c.weight;
-    wsum += c.weight;
-  }
-  if (wsum <= 0) return 50;
-  return round(sum / wsum, 1);
+/**
+ * Forward EPS-estimate revision momentum (0-100). Estimate revisions are the
+ * analyst signal with the strongest empirical track record, so this is kept
+ * independent of the price-target revision momentum.
+ */
+export function estimateMomentumScore(s: StockData): number | null {
+  const revision = band(s.epsRevisionPct, -0.1, 0.1);
+  const breadth =
+    s.epsRevisionsUp30d == null && s.epsRevisionsDown30d == null
+      ? null
+      : clamp(50 + ((s.epsRevisionsUp30d ?? 0) - (s.epsRevisionsDown30d ?? 0)) * 12.5);
+  const forward = band(s.forwardEpsGrowth, -0.1, 0.3);
+  return avg([revision, breadth, forward]);
+}
+
+/** Fraction of the 52-week range the price sits at (0 = low, 1 = high). */
+export function week52Position(s: StockData): number | null {
+  if (s.fiftyTwoWeekHigh == null || s.fiftyTwoWeekLow == null || s.price == null) return null;
+  const range = s.fiftyTwoWeekHigh - s.fiftyTwoWeekLow;
+  if (range <= 0) return null;
+  return clamp((s.price - s.fiftyTwoWeekLow) / range);
+}
+
+/**
+ * Price-trend confirmation (0-100). Stocks in an uptrend are less likely to be
+ * "cheap for a reason"; a high upside with a collapsing price is a falling
+ * knife. Combines distance from the 52-week high, price vs the 200-day average
+ * and the trailing 52-week return.
+ */
+export function priceTrendScore(s: StockData): number | null {
+  const pos = week52Position(s);
+  const fromHigh = s.fiftyTwoWeekHigh && s.price ? s.price / s.fiftyTwoWeekHigh : undefined;
+  const vs200 = s.twoHundredDayAverage && s.price ? s.price / s.twoHundredDayAverage : undefined;
+  return avg([
+    fromHigh == null || fromHigh <= 0 ? null : band(fromHigh, 0.4, 1),
+    vs200 == null || vs200 <= 0 ? null : band(vs200, 0.8, 1.2),
+    s.week52Change == null ? null : band(s.week52Change, -0.4, 0.4),
+    pos == null ? null : pos * 100,
+  ]);
+}
+
+/** Balance-sheet / liquidity / crowding caveats worth surfacing to the user. */
+export function riskFlags(s: StockData): string[] {
+  const flags: string[] = [];
+  const d = daysUntil(s.nextEarningsDate);
+  if (d != null && d >= 0 && d <= 14) flags.push(`Earnings in ${d}d`);
+  if (s.netDebtToEbitda != null && s.netDebtToEbitda > 4) flags.push("High leverage");
+  if (s.interestCoverage != null && s.interestCoverage < 2) flags.push("Thin interest cover");
+  if (s.freeCashFlow != null && s.freeCashFlow < 0) flags.push("Negative FCF");
+  if (s.currentRatio != null && s.currentRatio < 1) flags.push("Current ratio < 1");
+  if (s.shortPercentOfFloat != null && s.shortPercentOfFloat > 0.15) flags.push("Heavily shorted");
+  return flags;
+}
+
+/**
+ * Value-trap / event-risk safety score (0-100, higher = safer). Complements the
+ * quality and health factors by folding balance-sheet resilience, cash burn,
+ * short crowding and near-term earnings event risk into one signal.
+ */
+export function riskScore(s: StockData): number | null {
+  const base = avg([
+    s.netDebtToEbitda == null ? null : band(s.netDebtToEbitda, 5, 0),
+    s.interestCoverage == null ? null : band(s.interestCoverage, 1.5, 10),
+    s.currentRatio == null ? null : band(s.currentRatio, 0.8, 2),
+    s.freeCashFlow == null ? null : s.freeCashFlow > 0 ? 100 : 0,
+    s.shortPercentOfFloat == null ? null : band(s.shortPercentOfFloat, 0.2, 0),
+  ]);
+  if (base == null) return null;
+  const d = daysUntil(s.nextEarningsDate);
+  const eventPenalty = d != null && d >= 0 && d <= 14 ? 25 : 0;
+  return round(clamp(base - eventPenalty), 1);
 }
 
 /**
@@ -309,14 +471,19 @@ export function healthScore(s: StockData): number | null {
     band(s.currentRatio, 0.8, 2),
     band(s.netDebtToEbitda, 5, 0.5),
     band(s.interestCoverage, 1.5, 10),
-    s.freeCashFlow != null ? band(s.freeCashFlow, 0, 1) : null,
+    // Positive free cash flow is the signal; a dollar-value band is meaningless.
+    s.freeCashFlow == null ? null : s.freeCashFlow > 0 ? 100 : 0,
   ]);
 }
 
 export function toRow(stock: StockData, weights: ScoreWeights = DEFAULT_SCORE_WEIGHTS): ScreenerRow {
-  const up = upsidePct(stock.targetMean, stock.price);
-  const disp = dispersion(stock.targetHigh, stock.targetLow, stock.targetMean);
-  const rr = riskReward(stock.targetMean, stock.price, stock.targetLow);
+  const target = consensusTarget(stock);
+  const up = upsidePct(target, stock.price);
+  const disp = dispersion(stock.targetHigh, stock.targetLow, target);
+  const rr = riskReward(target, stock.price, stock.targetLow);
+  const parts = scoreParts(stock, disp);
+  const fromHigh = stock.fiftyTwoWeekHigh && stock.price ? stock.price / stock.fiftyTwoWeekHigh - 1 : null;
+  const vs200 = stock.twoHundredDayAverage && stock.price ? stock.price / stock.twoHundredDayAverage - 1 : null;
   return {
     ...stock,
     upsidePct: up == null ? null : round(up, 2),
@@ -324,11 +491,19 @@ export function toRow(stock: StockData, weights: ScoreWeights = DEFAULT_SCORE_WE
     momentum: momentum(stock.targetChanges),
     dispersion: disp == null ? null : round(disp, 1),
     targetMomentumPct: targetMomentumPct(stock.targetChanges),
-    valueScore: valueScore(stock),
-    qualityScore: qualityScore(stock),
-    growthScore: growthScore(stock),
-    healthScore: healthScore(stock),
-    confidenceScore: confidenceScore(stock, disp),
-    score: score(stock, disp, weights),
+    valueScore: parts.value,
+    qualityScore: parts.quality,
+    growthScore: parts.growth,
+    healthScore: parts.health,
+    confidenceScore: parts.confidence,
+    estimateMomentumScore: parts.estimate,
+    priceTrendScore: parts.trend,
+    riskScore: parts.risk,
+    riskFlags: riskFlags(stock),
+    earningsInDays: daysUntil(stock.nextEarningsDate),
+    pctFrom52wHigh: fromHigh == null ? null : round(fromHigh, 4),
+    pctVs200d: vs200 == null ? null : round(vs200, 4),
+    rankedBySector: false,
+    score: compositeScore(parts, weights),
   };
 }

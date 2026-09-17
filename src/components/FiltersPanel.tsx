@@ -47,6 +47,34 @@ export function FiltersPanel({
             onChange={(e) => onChange({ maxDispersion: num(e.target.value, 1000) })}
           />
         </Field>
+        <Field label="Max target age (days)" hint="Require a recent analyst action (0 = any)" tip={GLOSSARY.targetAge}>
+          <Input
+            type="number"
+            value={filters.maxTargetAgeDays}
+            onChange={(e) => onChange({ maxTargetAgeDays: num(e.target.value, 0) })}
+          />
+        </Field>
+        <Field label="Min price trend" hint="0–100, confirms an uptrend (0 = any)" tip={GLOSSARY.priceTrend}>
+          <Input
+            type="number"
+            value={filters.minPriceTrend}
+            onChange={(e) => onChange({ minPriceTrend: num(e.target.value, 0) })}
+          />
+        </Field>
+        <Field label="Min risk score" hint="0–100, avoids value traps (0 = any)" tip={GLOSSARY.riskScore}>
+          <Input
+            type="number"
+            value={filters.minRiskScore}
+            onChange={(e) => onChange({ minRiskScore: num(e.target.value, 0) })}
+          />
+        </Field>
+        <Field label="Exclude earnings within (days)" hint="Skip near-term event risk (0 = any)" tip={GLOSSARY.earningsInDays}>
+          <Input
+            type="number"
+            value={filters.excludeEarningsWithinDays}
+            onChange={(e) => onChange({ excludeEarningsWithinDays: num(e.target.value, 0) })}
+          />
+        </Field>
         <Field label="Min analysts" tip={GLOSSARY.analysts}>
           <Input
             type="number"

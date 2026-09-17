@@ -1,4 +1,5 @@
 import type { Filters, ScreenerRow } from "./types";
+import { targetAgeDays } from "./scoring";
 
 export type SortKey =
   | "score"
@@ -15,6 +16,10 @@ export type SortKey =
   | "growthScore"
   | "healthScore"
   | "confidenceScore"
+  | "estimateMomentumScore"
+  | "priceTrendScore"
+  | "riskScore"
+  | "earningsInDays"
   | "symbol";
 
 export function applyFilters(rows: ScreenerRow[], f: Filters): ScreenerRow[] {
@@ -40,6 +45,19 @@ export function applyFilters(rows: ScreenerRow[], f: Filters): ScreenerRow[] {
     if (f.minRiskReward > 0 && (r.riskReward ?? 0) < f.minRiskReward) return false;
 
     if (f.maxDispersion < 1000 && r.dispersion != null && r.dispersion > f.maxDispersion) return false;
+
+    if (f.maxTargetAgeDays > 0) {
+      const age = targetAgeDays(r.targetChanges);
+      if (age == null || age > f.maxTargetAgeDays) return false;
+    }
+
+    if (f.minPriceTrend > 0 && (r.priceTrendScore ?? 0) < f.minPriceTrend) return false;
+    if (f.minRiskScore > 0 && (r.riskScore ?? 0) < f.minRiskScore) return false;
+
+    if (f.excludeEarningsWithinDays > 0) {
+      const d = r.earningsInDays;
+      if (d != null && d >= 0 && d <= f.excludeEarningsWithinDays) return false;
+    }
 
     if (f.onlyRecentUpgrades && r.momentum <= 0) return false;
 

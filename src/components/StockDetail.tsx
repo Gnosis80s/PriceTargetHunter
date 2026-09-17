@@ -229,6 +229,58 @@ export function StockDetail({ symbol, onClose }: { symbol: string | null; onClos
                 tip={GLOSSARY.targetMomentumPct}
               />
               <Stat
+                label="Est. momentum"
+                value={row?.estimateMomentumScore == null ? "—" : fmtNum(row.estimateMomentumScore, 0)}
+                tone={
+                  row?.estimateMomentumScore == null
+                    ? undefined
+                    : row.estimateMomentumScore >= 65
+                      ? "good"
+                      : row.estimateMomentumScore <= 35
+                        ? "bad"
+                        : undefined
+                }
+                tip={GLOSSARY.estimateMomentum}
+              />
+              <Stat
+                label="EPS revision (90d)"
+                value={stock.epsRevisionPct == null ? "—" : pct1(stock.epsRevisionPct)}
+                tone={stock.epsRevisionPct == null ? undefined : stock.epsRevisionPct >= 0 ? "good" : "bad"}
+                tip={GLOSSARY.estimateRevision}
+              />
+              <Stat
+                label="Price trend"
+                value={row?.priceTrendScore == null ? "—" : fmtNum(row.priceTrendScore, 0)}
+                tone={
+                  row?.priceTrendScore == null
+                    ? undefined
+                    : row.priceTrendScore >= 65
+                      ? "good"
+                      : row.priceTrendScore <= 35
+                        ? "bad"
+                        : undefined
+                }
+                tip={GLOSSARY.priceTrend}
+              />
+              <Stat
+                label="Risk score"
+                value={row?.riskScore == null ? "—" : fmtNum(row.riskScore, 0)}
+                tone={row?.riskScore == null ? undefined : row.riskScore >= 65 ? "good" : row.riskScore <= 35 ? "bad" : undefined}
+                tip={GLOSSARY.riskScore}
+              />
+              <Stat
+                label="Next earnings"
+                value={
+                  row?.earningsInDays == null
+                    ? "—"
+                    : row.earningsInDays < 0
+                      ? "reported"
+                      : `in ${row.earningsInDays}d`
+                }
+                tone={row?.earningsInDays != null && row.earningsInDays >= 0 && row.earningsInDays <= 14 ? "bad" : undefined}
+                tip={GLOSSARY.earningsInDays}
+              />
+              <Stat
                 label={consensusTrend ? `Consensus (${consensusTrend.days}d)` : "Consensus trend"}
                 value={consensusTrend ? fmtPct(consensusTrend.pct) : "—"}
                 tone={consensusTrend ? (consensusTrend.pct >= 0 ? "good" : "bad") : undefined}
@@ -296,6 +348,43 @@ export function StockDetail({ symbol, onClose }: { symbol: string | null; onClos
                     </div>
                   ))}
                 </div>
+              </div>
+            ) : null}
+
+            {row && [row.estimateMomentumScore, row.priceTrendScore, row.riskScore].some((v) => v != null) ? (
+              <div className="mt-5">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <div className="text-sm font-semibold">Accuracy signals</div>
+                  <span className="text-[11px] text-muted">
+                    0–100 · {row.rankedBySector ? "ranked within sector" : "absolute bands"}
+                  </span>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  {[
+                    { label: "Estimate revisions", value: row.estimateMomentumScore, tip: GLOSSARY.estimateMomentum },
+                    { label: "Price trend", value: row.priceTrendScore, tip: GLOSSARY.priceTrend },
+                    { label: "Risk (higher = safer)", value: row.riskScore, tip: GLOSSARY.riskScore },
+                  ].map((f) => (
+                    <div key={f.label} className="rounded-lg border border-border bg-surface-2 px-3 py-2">
+                      <div className="flex items-center justify-between text-[11px] text-muted">
+                        <InfoTip tip={f.tip}>{f.label}</InfoTip>
+                        <span className="tabular font-semibold text-fg">{f.value == null ? "—" : fmtNum(f.value, 0)}</span>
+                      </div>
+                      <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-surface">
+                        <div className="h-full rounded-full bg-accent" style={{ width: `${f.value ?? 0}%` }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {row.riskFlags.length ? (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {row.riskFlags.map((flag) => (
+                      <Badge key={flag} tone="warn">
+                        {flag}
+                      </Badge>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             ) : null}
 

@@ -43,6 +43,7 @@ const DEFAULT_MODULES = [
   "upgradeDowngradeHistory",
   "summaryProfile",
   "earnings",
+  "earningsTrend",
 ].join(",");
 
 const RANGE_DAYS: Record<string, number> = {

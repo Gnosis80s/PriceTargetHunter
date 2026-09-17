@@ -138,6 +138,30 @@ export const GLOSSARY = {
 
   freeCashFlow:
     "Cash left after running the business and funding capital spending — the money available for dividends, buybacks or debt repayment. Positive is good.",
+
+  // --- Accuracy signals ---
+  estimateMomentum:
+    "How analysts' forward profit (EPS) estimates are being revised, 0–100. Rising estimates are one of the most reliable analyst signals — stronger evidence than the headline price target. Built from the 90-day estimate change, the balance of 30-day up/down revisions, and expected next-year growth.",
+  estimateRevision:
+    "The change in the consensus forward EPS estimate over roughly 90 days. Positive means analysts are raising their profit forecasts; negative means they are cutting them.",
+  forwardEpsGrowth:
+    "Expected growth in earnings per share for the forward year versus the current one, per the analyst consensus.",
+  priceTrend:
+    "Price-trend confirmation, 0–100. Combines how close the price is to its 52-week high, whether it trades above its 200-day average, and its trailing 52-week return. High-trend names are less likely to be 'cheap for a reason'; a big upside on a collapsing price is a falling knife.",
+  pctFrom52wHigh:
+    "How far the price sits below its 52-week high. Near the high means the market already likes it; deeply below can mean opportunity — or trouble.",
+  pctVs200d:
+    "How far the price sits above or below its 200-day moving average, a common long-term trend gauge. Above 0 means the trend is up.",
+  riskScore:
+    "Value-trap and event-risk safety score, 0–100. Higher means a sturdier balance sheet (lower leverage, adequate interest cover, positive free cash flow), less short crowding, and no earnings report in the next two weeks.",
+  earningsInDays:
+    "Days until the next expected earnings report. Earnings are a binary event that can overwhelm any target; the score penalises names reporting within two weeks.",
+  targetAge:
+    "How long since the newest analyst action. A target that has not been refreshed in months is stale — the price has moved but the target has not. Use the max-target-age filter to require recent coverage.",
+  sectorRelative:
+    "Ranks each factor as a percentile within its own sector instead of on absolute thresholds. A 15× P/E means different things for a utility and a software company; sector-relative scoring compares like with like.",
+  trackRecord:
+    "Logs the highest-scoring names your screen picks and measures their return versus a benchmark (SPY) as time passes. It is the only way to tell whether a scoring change actually improves selection.",
 } as const;
 
 export type GlossaryKey = keyof typeof GLOSSARY;
